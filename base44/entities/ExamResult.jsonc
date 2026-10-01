@@ -1,0 +1,70 @@
+{
+  "name": "ExamResult",
+  "type": "object",
+  "properties": {
+    "student_name": {
+      "type": "string"
+    },
+    "student_number": {
+      "type": "string"
+    },
+    "grade": {
+      "type": "string"
+    },
+    "track": {
+      "type": "string"
+    },
+    "section": {
+      "type": "string"
+    },
+    "score": {
+      "type": "number"
+    },
+    "total": {
+      "type": "number"
+    },
+    "percentage": {
+      "type": "number"
+    },
+    "answers_json": {
+      "type": "string"
+    },
+    "questions_json": {
+      "type": "string"
+    },
+    "submission_time": {
+      "type": "string"
+    },
+    "is_other": {
+      "type": "boolean",
+      "default": false
+    },
+    "is_perfect": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "student_name",
+    "grade",
+    "track",
+    "section",
+    "score",
+    "total",
+    "submission_time"
+  ],
+  "rls": {
+    "read": true,
+    "create": true,
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

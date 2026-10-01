@@ -1,0 +1,285 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+    --font-heading: ui-sans-serif, system-ui, sans-serif;
+    --font-body: ui-sans-serif, system-ui, sans-serif;
+    --font-display: ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+  }
+}
+
+/* ===== Molecular Laboratory — Chemistry Quiz Theme ===== */
+:root {
+  --mol-bg: #f5f8fc;
+  --mol-bg-2: #eaf0f8;
+  --mol-surface: #ffffff;
+  --mol-surface-2: #f1f5f9;
+  --mol-line: rgba(15, 23, 42, 0.07);
+  --mol-line-strong: rgba(15, 23, 42, 0.15);
+  --mol-text: #0f172a;
+  --mol-muted: #5b6b81;
+  --mol-tile: rgba(255, 255, 255, 0.78);
+  --mol-veil: rgba(15, 23, 42, 0.42);
+  --mol-green: #059669;
+  --mol-green-soft: rgba(5, 150, 105, 0.12);
+  --mol-cobalt: #2563eb;
+  --mol-cobalt-soft: rgba(37, 99, 235, 0.10);
+  --mol-red: #dc2626;
+  --mol-red-2: #c60a0a;
+  --mol-red-soft: rgba(220, 38, 38, 0.10);
+  --mol-amber: #d97706;
+}
+
+.molecular-app {
+  min-height: 100vh;
+  color: var(--mol-text);
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(37, 99, 235, 0.07), transparent 60%),
+    radial-gradient(900px 500px at 0% 100%, rgba(5, 150, 105, 0.06), transparent 55%),
+    linear-gradient(180deg, var(--mol-bg) 0%, var(--mol-bg-2) 100%);
+  font-family: 'Cairo', ui-sans-serif, system-ui, sans-serif;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* hexagonal lattice texture */
+.molecular-app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--mol-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mol-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 75%);
+  opacity: 0.5;
+  z-index: 0;
+}
+
+.mol-wrap { position: relative; z-index: 1; }
+
+.mol-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.88));
+  border: 1px solid var(--mol-line-strong);
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 20px 45px -22px rgba(15, 23, 42, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.mol-chip {
+  border: 1px solid var(--mol-line-strong);
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+}
+
+.mol-btn {
+  font-family: inherit;
+  font-weight: 800;
+  border-radius: 14px;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+.mol-btn:active { transform: translateY(2px); }
+
+.mol-btn-primary {
+  background: linear-gradient(135deg, #ff3b30 0%, #c60a0a 100%);
+  color: #fff;
+  box-shadow: 0 10px 30px -8px rgba(239, 68, 68, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.mol-btn-primary:hover { box-shadow: 0 16px 40px -8px rgba(239, 68, 68, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.mol-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.mol-btn-ghost {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--mol-text);
+  border: 1px solid var(--mol-line-strong);
+  box-shadow: 0 2px 8px -4px rgba(15, 23, 42, 0.15);
+}
+.mol-btn-ghost:hover { border-color: var(--mol-cobalt); }
+
+.mol-input {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid var(--mol-line-strong);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: var(--mol-text);
+  font-family: inherit;
+  font-weight: 700;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.mol-input::placeholder { color: #94a3b8; font-weight: 600; }
+.mol-input:focus { border-color: var(--mol-cobalt); box-shadow: 0 0 0 3px var(--mol-cobalt-soft); }
+.mol-input option { background: #ffffff; color: var(--mol-text); }
+
+.mol-label { display: block; margin-bottom: 8px; font-weight: 800; color: var(--mol-muted); font-size: 14px; letter-spacing: 0.02em; }
+
+/* Reaction tiles (answer options) */
+.reaction-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: right;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--mol-line-strong);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.9));
+  color: var(--mol-text);
+  font-weight: 700;
+  line-height: 1.6;
+  cursor: pointer;
+  transition: transform 0.14s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.reaction-tile:hover { transform: translateY(-2px) scale(1.01); border-color: var(--mol-cobalt); box-shadow: 0 12px 30px -12px rgba(59, 130, 246, 0.45); }
+.reaction-tile.is-selected { border-color: var(--mol-green); background: rgba(209, 250, 229, 0.9); box-shadow: 0 0 0 2px var(--mol-green-soft), 0 12px 30px -12px rgba(5, 150, 105, 0.35); }
+.reaction-tile .tile-marker {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--mol-line-strong);
+  background: #ffffff;
+  font-family: 'Instrument Serif', serif;
+  font-size: 18px;
+  color: var(--mol-muted);
+}
+.reaction-tile.is-selected .tile-marker { border-color: var(--mol-green); color: var(--mol-green); background: rgba(16, 185, 129, 0.12); }
+
+/* Nav grid (electron shells) */
+.electron-cell {
+  position: relative;
+  min-width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--mol-line-strong);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--mol-muted);
+  font-weight: 800;
+  font-size: 13px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  flex: 0 0 auto;
+}
+.electron-cell:hover { border-color: var(--mol-cobalt); color: var(--mol-text); }
+.electron-cell.answered { border-color: var(--mol-green); color: var(--mol-green); background: rgba(209, 250, 229, 0.85); }
+.electron-cell.current { border-color: var(--mol-red); color: var(--mol-red); box-shadow: 0 0 0 3px var(--mol-red-soft); }
+.electron-cell .dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; opacity: 0.85; }
+
+/* progress shell ring */
+.shell-ring { transform: rotate(-90deg); }
+.shell-ring circle { transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease; }
+
+@keyframes mol-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); } 50% { box-shadow: 0 0 0 14px rgba(239,68,68,0); } }
+.mol-pulse { animation: mol-pulse 2.4s ease-out infinite; }
+
+@keyframes mol-alarm { 0%,100% { background: rgba(239,68,68,0.10); } 50% { background: rgba(239,68,68,0.28); } }
+.alarm-overlay { animation: mol-alarm 0.7s ease-in-out infinite; }
+
+@keyframes mol-fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+.mol-fade-up { animation: mol-fade-up 0.4s ease both; }
+
+.katex { font-size: 1.05em; direction: ltr; unicode-bidi: isolate; }
+.katex-display { direction: ltr; unicode-bidi: isolate; }
+.katex-display { margin: 0.4em 0; }
+.q-media img { max-width: 100%; height: auto; border-radius: 14px; border: 1px solid var(--mol-line-strong); background: #fff; padding: 8px; }
+
+.mol-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+.mol-scroll::-webkit-scrollbar-thumb { background: var(--mol-line-strong); border-radius: 999px; }
+.mol-scroll::-webkit-scrollbar-track { background: transparent; }
+
+@media print {
+  .molecular-app::before { display: none !important; }
+  .molecular-app { background: #fff !important; color: #000 !important; }
+  .no-print { display: none !important; }
+  .print-block { box-shadow: none !important; border-color: #ddd !important; background: #fff !important; color: #000 !important; }
+  .print-block * { color: #000 !important; }
+}
