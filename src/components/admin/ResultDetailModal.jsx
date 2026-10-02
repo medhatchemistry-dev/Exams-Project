@@ -4,6 +4,7 @@ import AnswerReport from '@/components/quiz/AnswerReport';
 import { downloadPaginatedPdf } from '@/lib/pdfReport';
 import { exportSingleResultCsv } from '@/lib/excelExport';
 import { loadQuestionBanks, buildExam } from '@/lib/quizBanks';
+import { getResultQuestions } from '@/lib/resultQuestions';
 
 // Rebuilds the student's exact exam deterministically from their student number
 // (same seeded shuffle used when they took it) — no oversized data stored.
@@ -19,10 +20,16 @@ export default function ResultDetailModal({ result, onClose }) {
   }
 
   useEffect(() => {
+    const snapshot = getResultQuestions(result);
+    if (snapshot) {
+      setQuestions(snapshot);
+      return undefined;
+    }
+
     let alive = true;
     loadQuestionBanks()
       .then((banks) => {
-        if (alive) setQuestions(buildExam(banks, result.grade, result.track, result.student_number));
+        if (alive) setQuestions(buildExam(banks, result.grade, result.track, result.student_number, Number.isInteger(result.total) && result.total > 0 ? result.total : 25));
       })
       .catch(() => {});
     return () => {

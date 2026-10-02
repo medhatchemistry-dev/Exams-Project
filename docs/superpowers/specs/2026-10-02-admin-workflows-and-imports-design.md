@@ -70,7 +70,7 @@ An exam must contain at least one valid bank. Question count is determined by th
 ### Safe parsing and HTML handling
 
 - Never evaluate uploaded HTML or script contents.
-- Extract the assigned literal and parse it with a constrained parser that accepts only object/array literals, quoted strings and escapes, finite numbers, booleans, `null`, and quoted keys. Reject calls, identifiers, expressions, computed keys, template literals, functions, comments in the expression, and other executable syntax.
+- Extract the assigned literal and parse it with a constrained parser that accepts only object/array literals, quoted strings and escapes, static no-substitution template strings (required by the shipped bank), finite numbers, booleans, `null`, and quoted keys. Reject template interpolation, calls, identifiers as values, expressions, computed keys, functions, comments in the expression, and other executable syntax.
 - Ignore the rest of the uploaded HTML; no scripts, event handlers, or document code run.
 - Limit input size to 5 MiB and the decoded exam to 1,000 questions. Reject unsupported file types, oversized files, and invalid structures with clear field/bank/question context.
 - Normalize data and sanitize rich strings before storage. Preserve the existing bank's required tags (spans, divs, tables, and images), text/MathJax delimiters, basic presentational classes/styles, and `alt` text. Strip scripts, event attributes, embedded documents, forms, SVG, dangerous URL schemes, and unsupported tags/attributes.
@@ -104,11 +104,11 @@ The deployed `teacher-login` and `validate-exam-code` functions currently accept
 
 ### Required implementation
 
-- Replace the hard-coded production hostname assumption with a server-side, comma-separated `APP_ALLOWED_ORIGINS` Edge Function secret containing exact serialized origins (`https://hostname`, no path or wildcard). Parse and validate every entry at startup/request; reject invalid origin configuration and unknown browser origins.
+- Replace the hard-coded production hostname assumption with a server-side, comma-separated `APP_ALLOWED_ORIGINS` Edge Function secret containing exact serialized origins (`https://hostname`, no path or wildcard). The site owner supplies the exact Exams origins; do not use Vercel CLI/tools to discover or change domains. Parse and validate every entry at startup/request; reject invalid origin configuration and unknown browser origins.
 - Share equivalent origin validation across both `teacher-login` and `validate-exam-code`. Allow the current local development origins only for HTTP localhost/127.0.0.1; allow configured production origins by exact match. Do not allow `*` or arbitrary custom domains.
 - For allowed origins, include `Access-Control-Allow-Origin` with the exact request origin, `Vary: Origin`, required request headers, and the minimum methods. For disallowed origins, reject the request and do not reflect the origin.
 - Apply the same allowlist check to preflight and actual `POST`; CORS is not the sole authorization check. Maintain teacher-role checks and server-side password verification unchanged.
-- Update/deploy both functions together and document that adding/changing a Vercel domain requires updating `APP_ALLOWED_ORIGINS` and redeploying the affected functions.
+- Update/deploy both functions together through Supabase MCP after the owner supplies the exact Exams origins, and document that adding/changing a site domain requires updating `APP_ALLOWED_ORIGINS` and redeploying the affected functions.
 - Do not store the teacher password in source, environment configuration, migrations, or this document. The current password remains only as a bcrypt-compatible hash in `public.teacher_login_passwords`.
 
 ### Operational acceptance criteria

@@ -1,4 +1,6 @@
 // CSV export utilities (UTF-8 BOM so Arabic opens correctly in Excel).
+import { getResultQuestions, parseQuestionSnapshot } from './resultQuestions.js';
+
 const MARKERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
 function csvCell(v) {
@@ -30,17 +32,19 @@ function downloadCsv(rows, filename) {
 // Rebuilds each student's exam deterministically from their student number.
 export async function exportResultsCsv(results) {
   const { loadQuestionBanks, buildExam } = await import('@/lib/quizBanks');
-  const banks = await loadQuestionBanks();
+  const needsLegacyBanks = results.some((result) => !parseQuestionSnapshot(result.questions_json));
+  const banks = needsLegacyBanks ? await loadQuestionBanks() : {};
+  const questionColumnCount = Math.max(1, ...results.map((result) => Number(result.total) || 0));
   const rows = [
     ['اسم الطالب', 'رقم الطالب', 'الصف', 'المسار', 'الشعبة', 'الدرجة', 'من', 'النسبة', 'وقت التسليم', 'المصدر',
-      ...Array.from({ length: 25 }, (_, i) => [`س${i + 1} إجابة الطالب`, `س${i + 1} الصحيحة`]).flat()]
+      'الاختبار', ...Array.from({ length: questionColumnCount }, (_, i) => [`س${i + 1} إجابة الطالب`, `س${i + 1} الصحيحة`]).flat()]
   ];
 
   for (const r of results) {
-    const questions = buildExam(banks, r.grade, r.track, r.student_number);
+    const questions = getResultQuestions(r, () => buildExam(banks, r.grade, r.track, r.student_number, Number.isInteger(r.total) && r.total > 0 ? r.total : 25));
     const answers = safeParse(r.answers_json, {});
     const perQ = [];
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < questionColumnCount; i++) {
       const q = questions[i];
       if (!q) {
         perQ.push('', '');
@@ -54,6 +58,7 @@ export async function exportResultsCsv(results) {
     rows.push([
       r.student_name, r.student_number, r.grade, r.track, r.section,
       r.score, r.total, `${(r.percentage ?? 0).toFixed(1)}%`, r.submission_time, r.is_other ? 'Other' : 'قائمة',
+      r.exam_title_snapshot || 'الاختبار الحالي',
       ...perQ
     ]);
   }
@@ -63,11 +68,11 @@ export async function exportResultsCsv(results) {
 // Single-student export: grade + detailed exam (question, student's choice,
 // correct choice, verdict).
 export function exportSingleResultCsv(result) {
-  const questions = result.questions || safeParse(result.questions_json, []);
+  const questions = result.questions || getResultQuestions(result) || [];
   const answers = safeParse(result.answers_json, {});
   const rows = [
-    ['اسم الطالب', 'رقم الطالب', 'الصف', 'المسار', 'الشعبة', 'الدرجة', 'النسبة', 'وقت التسليم'],
-    [result.student_name, result.student_number, result.grade, result.track, result.section,
+    ['اسم الطالب', 'رقم الطالب', 'الصف', 'المسار', 'الشعبة', 'الاختبار', 'الدرجة', 'النسبة', 'وقت التسليم'],
+    [result.student_name, result.student_number, result.grade, result.track, result.section, result.exam_title_snapshot || 'الاختبار الحالي',
       result.score, `${(result.percentage ?? 0).toFixed(1)}%`, result.submission_time],
     [],
     ['السؤال', 'إجابة الطالب', 'الإجابة الصحيحة', 'الحالة']

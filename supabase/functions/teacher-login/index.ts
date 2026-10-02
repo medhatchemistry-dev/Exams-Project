@@ -1,36 +1,19 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-
-const corsHeaders = (origin: string | null) => ({
-  ...(origin ? { 'Access-Control-Allow-Origin': origin, 'Vary': 'Origin' } : {}),
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-});
-
-function isAllowedOrigin(origin: string | null) {
-  if (!origin) return false;
-  try {
-    const url = new URL(origin);
-    if ((url.hostname === 'localhost' || url.hostname === '127.0.0.1') && url.protocol === 'http:') return true;
-    return url.protocol === 'https:' && /^exams-project(?:-[a-z0-9-]+)?\.vercel\.app$/.test(url.hostname);
-  } catch {
-    return false;
-  }
-}
+import { corsHeaders, isAllowedOrigin, parseConfiguredOrigins } from '../_shared/cors.js';
 
 Deno.serve(async (request) => {
   const origin = request.headers.get('origin');
-  const headers = corsHeaders(isAllowedOrigin(origin) ? origin : null);
+  const allowedOrigins = parseConfiguredOrigins(Deno.env.get('APP_ALLOWED_ORIGINS'));
+  const allowed = isAllowedOrigin(origin, allowedOrigins);
+  const headers = corsHeaders(origin, allowedOrigins);
 
+  if (!allowed) return Response.json({ error: 'Forbidden origin' }, { status: 403, headers });
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers });
   }
   if (request.method !== 'POST') {
     return Response.json({ error: 'Method not allowed' }, { status: 405, headers });
   }
-  if (!isAllowedOrigin(origin)) {
-    return Response.json({ error: 'Forbidden' }, { status: 403, headers });
-  }
-
   try {
     const body = await request.json();
     const password = body?.password;

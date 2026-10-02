@@ -4,7 +4,7 @@
 
 **Goal:** Deliver separate teacher admin pages, secure imported exam/access-code workflows, roster CRUD and Excel import, preserve historical score reports, and repair Supabase CORS configuration for confirmed Exams origins.
 
-**Architecture:** Keep the student app on `/` and use nested teacher-only routes under `/admin`. Store imported banks in a teacher-only Supabase `exams` table; expose an exam only after service-role validation of its access code. Preserve an immutable question/option snapshot in each new score. Use a constrained Acorn AST reader plus DOMPurify for the current HTML-bank format and ExcelJS for roster workbooks. Centralize exact-origin CORS validation in a shared Supabase function module.
+**Architecture:** Keep the student app on `/` and use nested teacher-only routes under `/admin`. Store imported banks in a teacher-only Supabase `exams` table; expose an exam only after service-role validation of its access code. Preserve an immutable question/option snapshot in each new score. Use a constrained Acorn AST reader (including static no-substitution template literals, never interpolation) plus DOMPurify for the current HTML-bank format and ExcelJS for roster workbooks. Centralize exact-origin CORS validation in a shared Supabase function module.
 
 **Tech Stack:** React 18, React Router 6, Vite, Supabase JS/Edge Functions, PostgreSQL migrations/RLS, Acorn, DOMPurify, ExcelJS, Node's built-in `node:test`, Playwright browser verification.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Keep `/` public for students; all `/admin/*` management pages require teacher role.
-- Use only `questionBanksByGrade` object-literal exam HTML; never execute uploaded scripts or expressions.
+- Use only `questionBanksByGrade` object-literal exam HTML; accept static no-substitution template strings because the current bank uses them; reject interpolation and never execute uploaded scripts or expressions.
 - HTML upload limit: 5 MiB; exam limit: 1,000 questions; roster workbook limit: 10 MiB and 5,000 data rows; upsert batches: no more than 100 rows.
 - Roster update key is `student_number`; duplicate numbers within the same workbook and any invalid rows block commit.
 - Preserve existing unlinked access codes and score rows as bundled-bank legacy records.
@@ -51,23 +51,26 @@
 
 **Interface:** `isAllowedOrigin(origin, configuredOrigins)` returns a boolean; `corsHeaders(origin, allowed)` returns response CORS headers. Preserve exact matching; normalize configured values only when they are valid origins without path/query/fragment, HTTPS except HTTP localhost/127.0.0.1. Preserve the current `exams-project*.vercel.app` compatibility origins.
 
-- [ ] Write tests for null/missing Origin, current localhost, current preview pattern, exact configured custom origin, trailing slash/path config rejection, lookalike subdomain rejection, and unrelated `hamzacross100.online` rejection.
-- [ ] Run `node --test tests/cors.test.js`; confirm the newly expected cases fail before implementation.
-- [ ] Implement shared helper and import it from both functions; CORS headers only echo an origin when allowed; reject disallowed POST origins.
-- [ ] Re-run `node --test tests/cors.test.js`; expect every origin case to pass.
-- [ ] Run `npm run lint` and `npm run typecheck`.
+- [x] Write tests for null/missing Origin, current localhost, current preview pattern, exact configured custom origin, trailing slash/path config rejection, lookalike subdomain rejection, and unrelated `hamzacross100.online` rejection.
+- [x] Run `node --test tests/cors.test.js`; confirm the newly expected cases fail before implementation.
+- [x] Implement shared helper and import it from both functions; CORS headers only echo an origin when allowed; reject disallowed POST origins.
+- [x] Re-run `node --test tests/cors.test.js`; expect every origin case to pass.
+- [x] Run `npm run lint` and `npm run typecheck`.
 
 #### Task 2: Add database contract, RLS, teacher RPCs, and migration tests
 
 **Files:**
-- Create `supabase/migrations/20261002130000_admin_exam_and_roster_management.sql` (use next unused timestamp if this version collides).
+- The original admin/exam/roster schema migration is not present in this checkout. The plan previously named `20261002132537_admin_exam_and_roster_management.sql`, but that file is absent.
+- `supabase/migrations/20261002141722_protect_active_exam_access_codes.sql` is checked in (protects active code references on archive/delete); remote application status is unverified.
+- `supabase/migrations/20261002143305_index_exam_foreign_keys_and_restrict_issue_rpc.sql` is checked in (adds FK indexes and explicit function grants); remote application status is unverified. The prior `20261002143000_...` filename was incorrect.
+- `supabase/migrations/20261002144846_secure_imported_exam_submissions.sql` and `supabase/migrations/20261002145514_secure_imported_exam_answer_grading.sql` are checked in; remote application status is unverified.
 - Create `tests/exam-schema-contract.test.js`.
 - Modify `supabase/functions/validate-exam-code/index.ts` in the dependent code integration task after schema contract is set.
 
 **Contract:** Add `public.exams`; nullable exam references/title/question snapshot columns; teacher-only RLS for roster mutations and exam management; service-only linked-code validation returning `{ valid, legacy, examId, examTitle, banks }`; authenticated teacher RPC `issue_exam_access_code(exam_id, code, expires_at)` which atomically deactivates existing active codes and inserts one linked code. Preserve existing SQL signature behavior only where compatibility needs it; new return structure is used by the Edge Function.
 
-- [ ] Write a schema-contract test that asserts the migration introduces each required field, FK delete behavior, teacher-role policies, service-only validation, and atomic one-active-code issuance.
-- [ ] Run `node --test tests/exam-schema-contract.test.js`; verify the missing migration contract fails.
+- [x] Align contract tests with migrations checked into this checkout; the original admin/exam/roster schema migration is absent and cannot be asserted here.
+- [x] Run `node --test tests/exam-schema-contract.test.js`; contract checks now target migrations present in this checkout.
 - [ ] Write the forward-only migration, using `DROP FUNCTION`/recreate only where return type changes and reapplying explicit execute grants after recreation.
 - [ ] Run the migration contract test and inspect SQL for idempotent policy/index names, least privileges, foreign-key behavior, and no destructive data rewrite.
 - [ ] Apply the reviewed migration with Supabase MCP only after confirming existing tables and migration history. Save the matching SQL in this repository.
@@ -83,8 +86,8 @@
 
 **Interface:** `parseExamHtml(source, filename)` returns `{ banks, bankSummaries }` or throws a typed validation error with bank/question context. Parser reads the initializer of `questionBanksByGrade` using Acorn AST and an allowlisted literal interpreter; DOMPurify sanitizes HTML-bearing fields with narrowly configured tags/attributes and URI rules. Never use `eval`, `Function`, or browser script execution.
 
-- [ ] Test accepted current-style object literals, Arabic keys, string escaping, booleans/null/numeric literal data, and multiple grade-track banks.
-- [ ] Test missing assignment, malformed syntax, function/call/identifier/template/spread/computed expression rejection, invalid bank key, empty Arabic text, malformed options, out-of-range answer index, question/file limits, unsafe tags, event attributes, JavaScript URLs, allowed HTTPS images, and allowed data images.
+- [ ] Test accepted current-style object literals, Arabic keys, string escaping, static template strings with no substitutions, booleans/null/numeric literal data, and multiple grade-track banks.
+- [ ] Test missing assignment, malformed syntax, function/call/identifier/interpolated-template/spread/computed expression rejection, invalid bank key, empty Arabic text, malformed options, out-of-range answer index, question/file limits, unsafe tags, event attributes, JavaScript URLs, allowed HTTPS images, and allowed data images.
 - [ ] Run `node --test tests/examImport.test.js`; verify exploit-shaped expressions fail and valid example fixture parses.
 - [ ] Implement parser/sanitizer minimally and rerun focused tests.
 - [ ] Parse `public/question-bank.html` in the test and assert five banks/125 questions plus expected safe chemistry markup.
@@ -217,7 +220,7 @@
 - No committed secret/origin value; configure `APP_ALLOWED_ORIGINS` only in Supabase Edge Function secrets for the Exams project.
 - Deploy `teacher-login` and `validate-exam-code` through Supabase MCP.
 
-- [ ] Obtain/confirm the exact Exams production and preview origins from the user or a verified GitHub project configuration/artifact. Do not use `hamzacross100.online`; it currently serves a different Vercel “Hamza” project.
+- [ ] Obtain/confirm the exact Exams production and preview origins from the user or a verified GitHub project configuration/artifact. Do not use `hamzacross100.online`; it currently serves a different “Hamza” project. Do not inspect or modify Vercel; the owner provides the exact origin for the Supabase secret.
 - [ ] Set `APP_ALLOWED_ORIGINS` to the comma-separated exact origins in Supabase secrets. Preserve localhost via code-local development handling; do not include schemes other than HTTPS except local HTTP.
 - [ ] Deploy both functions with identical shared-origin behavior and the new exam-validation contract.
 - [ ] Verify an exact approved Origin receives the correct `Access-Control-Allow-Origin` on OPTIONS and POST; verify an unrelated Origin is denied; never transmit the teacher password in test logs or tool output.
@@ -227,8 +230,9 @@
 
 **Files:** No new production files expected except fixes discovered by verification.
 
-- [ ] Run `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build` after all code changes.
-- [ ] Browser verify `/`, `/admin`, all four admin pages, import preview and confirm, code lifecycle, student workbook download/preview/upsert, and score snapshot/report.
+- [x] Run `node --test tests/*.test.js`, `npm run lint`, `npm run typecheck`, and `npm run build` after all code changes (`package.json` has no `npm test` script).
+- [x] Smoke `/`, `/admin`, and the exams, students, scores, and certificates routes in a browser; verify unauthenticated routes show the teacher login.
+- [ ] With a real teacher session and linked Supabase project, verify import preview/confirm, code lifecycle, workbook download/preview/upsert, and score snapshot/report.
 - [ ] Review the full diff; ensure secrets, actual domain secret values, and `.env.local` are not staged.
 - [ ] Commit focused changes with project-local Git author `medhatchemistry-dev` and push to `origin/dev` using Git only; no `gh` CLI, no Vercel tools/CLI.
 - [ ] Verify pushed SHA via `git ls-remote origin dev` and GitHub MCP; verify clean worktree.

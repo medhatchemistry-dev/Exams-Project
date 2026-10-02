@@ -9,7 +9,7 @@ function fmt(s) {
   return `${m}:${sec < 10 ? '0' : ''}${sec}`;
 }
 
-export default function QuizScreen({ student, questions, answers, onAnswer, onSubmit, onAlert }) {
+export default function QuizScreen({ student, examTitle, questions, answers, onAnswer, onSubmit, onAlert }) {
   const [timeLeft, setTimeLeft] = useState(45 * 60);
   const [current, setCurrent] = useState(0);
   const timerRef = useRef(null);
@@ -57,7 +57,7 @@ export default function QuizScreen({ student, questions, answers, onAnswer, onSu
       <div className="mol-card flex items-center justify-between gap-3 p-3 md:p-4 mb-4 sticky top-3 z-30">
         <div className="min-w-0">
           <div className="text-xs font-extrabold tracking-wider" style={{ color: 'var(--mol-muted)' }}>
-            مرحلة التفاعل — Reaction Phase
+            {examTitle || 'مرحلة التفاعل — Reaction Phase'}
           </div>
           <div className="text-sm font-extrabold truncate" style={{ color: 'var(--mol-text)' }}>
             {student.name} • {student.grade} ({student.track}) • شعبة {student.section}

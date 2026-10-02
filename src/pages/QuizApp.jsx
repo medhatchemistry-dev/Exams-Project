@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { supabase, hasTeacherRole } from '@/api/supabaseClient';
-import { loadQuestionBanks, buildExam } from '@/lib/quizBanks';
+import { loadQuestionBanks } from '@/lib/quizBanks';
+import { buildExam, selectExamBank } from '@/lib/examExecution';
 import LoginScreen from '@/components/quiz/LoginScreen';
 import QuizScreen from '@/components/quiz/QuizScreen';
 import ResultScreen from '@/components/quiz/ResultScreen';
@@ -28,6 +29,7 @@ export default function QuizApp() {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
+  const [validatedExam, setValidatedExam] = useState(null);
 
   const [alert, setAlert] = useState({ open: false, title: '', message: '', onConfirm: undefined });
   const [teacherModal, setTeacherModal] = useState(false);
@@ -39,11 +41,6 @@ export default function QuizApp() {
   const alarmOsc = useRef(null);
   const pendingStudent = useRef(null);
   const [accessCode, setAccessCode] = useState('');
-
-  // load banks once
-  useEffect(() => {
-    loadQuestionBanks().then(setBanks).catch(() => setBanksError(true));
-  }, []);
 
   // alarm sound (WebAudio beep)
   const startAlarm = useCallback(() => {
@@ -107,7 +104,21 @@ export default function QuizApp() {
     const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { code } });
     if (error) throw error;
     if (data?.valid) {
+      if (data.legacy) {
+        try {
+          setBanks(await loadQuestionBanks());
+          setBanksError(false);
+        } catch (bankError) {
+          console.error('Legacy question bank load failed:', bankError);
+          setBanksError(true);
+          throw new Error('تعذر تحميل بنك الأسئلة الحالي.');
+        }
+      } else {
+        setBanks(null);
+        setBanksError(false);
+      }
       setAccessCode(code);
+      setValidatedExam(data);
       setScreen('login');
     }
     return Boolean(data?.valid);
@@ -118,6 +129,7 @@ export default function QuizApp() {
     try {
       const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { code: accessCode } });
       if (error) throw error;
+      if (data?.valid) setValidatedExam(data);
       return Boolean(data?.valid);
     } catch (error) {
       console.error('Active exam code check failed:', error);
@@ -184,13 +196,23 @@ export default function QuizApp() {
 
   const beginExam = useCallback(
     async (info) => {
-      if (!banks) return;
+      if (validatedExam?.legacy && !banks) return;
       if (!await isExamCodeActive()) {
         setScreen('access');
         showAlert('انتهت صلاحية الرمز', 'أوقف المعلم الاختبار أو انتهت صلاحية الرمز. اطلب رمزاً صالحاً للمتابعة.');
         return;
       }
-      const exam = buildExam(banks, info.grade, info.track, info.id);
+      let selectedBank;
+      try {
+        selectedBank = selectExamBank(validatedExam, info.grade, info.track, banks || {}, { exposeAnswers: Boolean(validatedExam?.legacy) });
+      } catch (error) {
+        showAlert('الصف غير متاح في هذا الاختبار', error.message);
+        return;
+      }
+      const exam = buildExam({ [selectedBank.bankKey]: selectedBank.questions }, info.grade, info.track, info.id, {
+        examId: selectedBank.examId,
+        legacy: Boolean(validatedExam?.legacy),
+      });
       setStudent(info);
       setQuestions(exam);
       setAnswers({});
@@ -199,7 +221,7 @@ export default function QuizApp() {
       setScreen('quiz');
       window.scrollTo({ top: 0 });
     },
-    [banks, isExamCodeActive, showAlert]
+    [banks, isExamCodeActive, showAlert, validatedExam]
   );
 
   const handleStart = useCallback(
@@ -260,46 +282,75 @@ export default function QuizApp() {
       stopAlarm();
       setSecurity({ open: false, warningsLeft: 3 });
 
-      let score = 0;
-      if (!auto) {
-        questions.forEach((q, idx) => {
-          if (answers[idx] !== undefined && parseInt(answers[idx], 10) === q.answer) score++;
-        });
-      }
-      const total = questions.length;
       const submissionTime = new Date().toLocaleString('ar-AE');
+      let score = 0;
+      let total = questions.length;
+      let finalQuestions = questions;
 
       if (student) {
-        const { error } = await supabase.from('exam_results').insert({
-          student_name: student.name,
-          student_number: student.id,
-          grade: student.grade,
-          track: student.track,
-          section: student.section,
-          score,
-          total,
-          answers_json: answers,
-          submission_time: submissionTime,
-          is_other: !!student.isOther
-        });
-        if (error) {
-          console.error('Exam result save failed:', error);
-          isSubmitting.current = false;
-          showAlert('تعذر حفظ النتيجة', 'لم نتمكن من حفظ إجابتك. تحقق من اتصال الإنترنت ثم أعد الإرسال.');
-          return;
+        if (validatedExam?.legacy) {
+          if (!auto) {
+            questions.forEach((question, index) => {
+              if (answers[index] !== undefined && Number.parseInt(answers[index], 10) === question.answer) score++;
+            });
+          }
+          const { error } = await supabase.from('exam_results').insert({
+            student_name: student.name,
+            student_number: student.id,
+            grade: student.grade,
+            track: student.track,
+            section: student.section,
+            score,
+            total,
+            answers_json: answers,
+            exam_id: null,
+            exam_title_snapshot: 'الاختبار الحالي',
+            questions_json: questions,
+            submission_time: submissionTime,
+            is_other: !!student.isOther,
+          });
+          if (error) {
+            console.error('Exam result save failed:', error);
+            isSubmitting.current = false;
+            showAlert('تعذر حفظ النتيجة', 'لم نتمكن من حفظ إجابتك. تحقق من اتصال الإنترنت ثم أعد الإرسال.');
+            return;
+          }
+        } else {
+          const { data, error } = await supabase.functions.invoke('validate-exam-code', {
+            body: {
+              action: 'submit',
+              code: accessCode,
+              student,
+              answers,
+              questions,
+              submissionTime,
+              isAuto: auto,
+            },
+          });
+          if (error || !data?.submitted) {
+            console.error('Imported exam submission failed:', error || data?.error);
+            isSubmitting.current = false;
+            showAlert('تعذر حفظ النتيجة', 'لم نتمكن من حفظ إجابتك. تحقق من اتصال الإنترنت ثم أعد الإرسال.');
+            return;
+          }
+          score = data.score;
+          total = data.total;
+          finalQuestions = data.questions;
         }
       }
 
-      setResult({ score, total, submissionTime });
+      setQuestions(finalQuestions);
+      setResult({ score, total, submissionTime, examTitle: validatedExam?.legacy ? 'الاختبار الحالي' : validatedExam?.examTitle || 'الاختبار' });
       setScreen('result');
       window.scrollTo({ top: 0 });
     },
-    [questions, answers, student, stopAlarm, showAlert, isExamCodeActive]
+    [questions, answers, student, stopAlarm, showAlert, isExamCodeActive, validatedExam, accessCode]
   );
 
   const restart = useCallback(() => {
     setScreen('access');
     setAccessCode('');
+    setValidatedExam(null);
     setStudent(null);
     setQuestions([]);
     setAnswers({});
@@ -308,7 +359,7 @@ export default function QuizApp() {
     isSubmitting.current = false;
   }, []);
 
-  if (banksError) {
+  if (banksError && validatedExam?.legacy) {
     return (
       <div className="molecular-app">
         <div className="mol-wrap max-w-md mx-auto px-4 py-24 text-center">
@@ -326,7 +377,7 @@ export default function QuizApp() {
 
   return (
     <div className="molecular-app min-h-screen">
-      {!banks && screen === 'login' && (
+      {!banks && screen === 'login' && validatedExam?.legacy && (
         <div className="mol-wrap min-h-[60vh] flex items-center justify-center">
           <div className="flex items-center gap-3 font-extrabold" style={{ color: 'var(--mol-muted)' }}>
             <Loader2 className="animate-spin" size={22} /> جاري تجهيز المختبر…
@@ -336,13 +387,14 @@ export default function QuizApp() {
 
       {screen === 'access' && <ExamCodeScreen onContinue={validateExamCode} />}
 
-      {banks && screen === 'login' && (
+      {screen === 'login' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (
         <LoginScreen onStart={handleStart} />
       )}
 
-      {screen === 'quiz' && banks && (
+      {screen === 'quiz' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (
         <QuizScreen
           student={student}
+          examTitle={validatedExam?.examTitle}
           questions={questions}
           answers={answers}
           onAnswer={handleAnswer}
@@ -354,6 +406,7 @@ export default function QuizApp() {
       {screen === 'result' && result && (
         <ResultScreen
           student={student}
+          examTitle={result.examTitle}
           score={result.score}
           total={result.total}
           submissionTime={result.submissionTime}

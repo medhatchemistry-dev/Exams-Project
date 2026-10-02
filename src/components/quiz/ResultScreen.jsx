@@ -14,7 +14,7 @@ function skillRow(icon, label, status, color) {
   );
 }
 
-export default function ResultScreen({ student, score, total, submissionTime, questions, answers, onPrint, onRestart }) {
+export default function ResultScreen({ student, examTitle, score, total, submissionTime, questions, answers, onPrint, onRestart }) {
   const percentage = total ? (score / total) * 100 : 0;
   const grade = percentage >= 90 ? 'ممتاز' : percentage >= 75 ? 'جيد جداً' : percentage >= 60 ? 'جيد' : percentage >= 50 ? 'مقبول' : 'يحتاج تعزيزاً';
   const gradeColor = percentage >= 75 ? 'var(--mol-green)' : percentage >= 50 ? 'var(--mol-amber)' : 'var(--mol-red)';
@@ -50,6 +50,7 @@ export default function ResultScreen({ student, score, total, submissionTime, qu
           <p className="text-sm font-bold mt-1" style={{ color: 'var(--mol-muted)' }}>
             {student.name} • {student.grade} ({student.track}) • شعبة {student.section}
           </p>
+          {examTitle && <p className="mt-1 text-sm font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>{examTitle}</p>}
         </div>
 
         {/* score */}

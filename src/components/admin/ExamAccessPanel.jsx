@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/api/supabaseClient';
 import { Check, Copy, KeyRound, Loader2, Power, RefreshCw } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
 
 function createCode() {
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
-  return Array.from(bytes, (byte) => byte.toString(36).padStart(2, '0')).join('').slice(0, 10).toUpperCase();
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 16).toUpperCase();
 }
 
-export default function ExamAccessPanel() {
-  const [activeCode, setActiveCode] = useState(null);
+export default function ExamAccessPanel({ exams, onChanged }) {
+  const [examId, setExamId] = useState('');
   const [expiryHours, setExpiryHours] = useState('');
+  const [activeCode, setActiveCode] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -19,19 +20,16 @@ export default function ExamAccessPanel() {
     setLoading(true);
     setError('');
     try {
-      const { data, error: queryError } = await supabase
-        .from('exam_access_codes')
-        .select('id, code, expires_at, created_at')
+      const { data, error: queryError } = await supabase.from('exam_access_codes')
+        .select('id, code, expires_at, created_at, exam_id, exams(title)')
         .eq('is_active', true)
         .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (queryError) throw queryError;
       setActiveCode(data);
-    } catch (queryError) {
-      console.error('Exam code load failed:', queryError);
-      setError('تعذر تحميل رمز الاختبار. تأكد من تطبيق تحديث قاعدة البيانات.');
+    } catch (loadError) {
+      console.error('Active access code load failed:', loadError);
+      setError('تعذر تحميل رمز الاختبار النشط. تحقق من تحديث قاعدة البيانات.');
     } finally {
       setLoading(false);
     }
@@ -39,107 +37,61 @@ export default function ExamAccessPanel() {
 
   useEffect(() => { loadCode(); }, [loadCode]);
 
-  const generate = async () => {
+  const issue = async () => {
+    if (!examId || !window.confirm('سيؤدي إنشاء هذا الرمز إلى إيقاف الرمز النشط الحالي. هل تريد المتابعة؟')) return;
     setSaving(true);
     setError('');
     try {
-      const { error: disableError } = await supabase
-        .from('exam_access_codes')
-        .update({ is_active: false })
-        .eq('is_active', true);
-      if (disableError) throw disableError;
-
-      const { data: { user } } = await supabase.auth.getUser();
       const hours = Number(expiryHours);
       const expiresAt = hours > 0 ? new Date(Date.now() + hours * 60 * 60 * 1000).toISOString() : null;
-      const { data, error: insertError } = await supabase
-        .from('exam_access_codes')
-        .insert({ code: createCode(), expires_at: expiresAt, created_by: user?.id ?? null })
-        .select('id, code, expires_at, created_at')
-        .single();
-      if (insertError) throw insertError;
-      setActiveCode(data);
-    } catch (saveError) {
-      console.error('Exam code creation failed:', saveError);
-      setError('تعذر إنشاء الرمز. حاول مرة أخرى أو تحقق من صلاحيات حساب المعلم.');
-      loadCode();
+      const { error: rpcError } = await supabase.rpc('issue_exam_access_code', {
+        target_exam_id: Number(examId),
+        new_code: createCode(),
+        new_expires_at: expiresAt,
+      });
+      if (rpcError) throw rpcError;
+      await loadCode();
+      onChanged?.();
+    } catch (issueError) {
+      console.error('Access code issuance failed:', issueError);
+      setError('تعذر إنشاء الرمز. تحقق من الاختبار وصلاحية حساب المعلم.');
     } finally {
       setSaving(false);
     }
   };
 
   const deactivate = async () => {
-    if (!activeCode) return;
+    if (!activeCode || !window.confirm('سيتم إيقاف رمز الاختبار الحالي.')) return;
     setSaving(true);
     setError('');
-    const { error: updateError } = await supabase
-      .from('exam_access_codes')
-      .update({ is_active: false })
-      .eq('id', activeCode.id);
-    if (updateError) {
-      setError('تعذر إيقاف الرمز. حاول مرة أخرى.');
-    } else {
+    try {
+      const { error: updateError } = await supabase.from('exam_access_codes').update({ is_active: false }).eq('id', activeCode.id);
+      if (updateError) throw updateError;
       setActiveCode(null);
-      setCopied(false);
+      onChanged?.();
+    } catch (deactivateError) {
+      console.error('Access code deactivation failed:', deactivateError);
+      setError('تعذر إيقاف الرمز. حاول مرة أخرى.');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const copyCode = async () => {
+    if (!activeCode?.code) return;
     await navigator.clipboard.writeText(activeCode.code);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    window.setTimeout(() => setCopied(false), 1600);
   };
 
-  const expired = activeCode?.expires_at && new Date(activeCode.expires_at) <= new Date();
+  const available = exams.filter((exam) => exam.status === 'available');
 
   return (
-    <section className="mol-card p-5 md:p-7 mb-6">
-      <div className="flex items-start gap-3 mb-5">
-        <div className="grid place-items-center shrink-0" style={{ width: 44, height: 44, borderRadius: 13, background: 'var(--mol-cobalt-soft)', color: 'var(--mol-cobalt)' }}><KeyRound size={21} /></div>
-        <div>
-          <h2 className="text-lg font-extrabold">إدارة رمز الاختبار</h2>
-          <p className="text-sm font-bold mt-1" style={{ color: 'var(--mol-muted)' }}>أنشئ رمزاً للطلاب، وحدد مدة صلاحيته، أو أوقفه في أي وقت.</p>
-        </div>
-      </div>
-
-      {loading ? <div className="flex items-center gap-2 py-3 font-bold" style={{ color: 'var(--mol-muted)' }}><Loader2 className="animate-spin" size={18} /> جارٍ التحميل…</div> : activeCode && !expired ? (
-        <div className="rounded-2xl border p-4 md:p-5" style={{ borderColor: 'var(--mol-green)', background: 'var(--mol-green-soft)' }}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs font-extrabold mb-1" style={{ color: 'var(--mol-green)' }}>الاختبار مفتوح · الرمز النشط</div>
-              <div className="font-mono text-2xl md:text-3xl font-extrabold tracking-[0.18em]" dir="ltr">{activeCode.code}</div>
-              <div className="text-xs font-bold mt-2" style={{ color: 'var(--mol-muted)' }}>
-                {activeCode.expires_at ? `ينتهي ${new Date(activeCode.expires_at).toLocaleString('ar')}` : 'لا يوجد وقت انتهاء تلقائي'}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button type="button" className="mol-btn mol-btn-ghost px-4 py-2 inline-flex items-center gap-2" onClick={copyCode}>
-                {copied ? <Check size={16} /> : <Copy size={16} />}{copied ? 'تم النسخ' : 'نسخ الرمز'}
-              </button>
-              <button type="button" className="mol-btn mol-btn-ghost px-4 py-2 inline-flex items-center gap-2" disabled={saving} onClick={deactivate}>
-                <Power size={16} /> إيقاف
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-2xl border p-4 md:p-5" style={{ borderColor: 'var(--mol-line-strong)', background: 'var(--mol-surface-2)' }}>
-          <p className="font-extrabold mb-4">لا يوجد اختبار مفتوح حالياً</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="w-full sm:w-52">
-              <label htmlFor="code-expiry" className="mol-label">مدة الاختبار بالساعات</label>
-              <input id="code-expiry" type="number" min="1" step="1" className="mol-input" value={expiryHours} onChange={(event) => setExpiryHours(event.target.value)} placeholder="فارغ = بلا انتهاء" />
-            </div>
-            <button type="button" className="mol-btn mol-btn-primary px-5 py-3 inline-flex items-center gap-2" disabled={saving} onClick={generate}>
-              {saving ? <Loader2 className="animate-spin" size={17} /> : <RefreshCw size={17} />} إنشاء وفتح الاختبار
-            </button>
-          </div>
-          {expired && <p className="text-xs font-bold mt-3" style={{ color: 'var(--mol-amber)' }}>انتهت صلاحية الرمز السابق؛ أنشئ رمزاً جديداً لفتح اختبار آخر.</p>}
-        </div>
-      )}
-
-      {error && <p role="alert" className="text-sm font-bold mt-3" style={{ color: 'var(--mol-red)' }}>{error}</p>}
+    <section className="mol-card space-y-4 p-5 md:p-6">
+      <div className="flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl" style={{ background: 'var(--mol-cobalt-soft)', color: 'var(--mol-cobalt)' }}><KeyRound size={21} /></span><div><h3 className="text-lg font-extrabold">رمز دخول الاختبار</h3><p className="text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>كل رمز يفتح اختباراً واحداً فقط. إنشاء رمز جديد يوقف الرمز النشط الحالي.</p></div></div>
+      {loading ? <div role="status" className="flex items-center gap-2 p-3 font-bold"><Loader2 size={17} className="animate-spin" /> جارٍ تحميل الرمز…</div> : activeCode ? <div className="rounded-xl border p-4" style={{ borderColor: 'var(--mol-green)', background: 'var(--mol-green-soft)' }}><p className="text-xs font-extrabold" style={{ color: 'var(--mol-green)' }}>الرمز النشط · {activeCode.exams?.title || 'الاختبار المرفق'}</p><p dir="ltr" className="my-2 font-mono text-2xl font-extrabold tracking-[0.16em]">{activeCode.code}</p><p className="text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>{activeCode.expires_at ? `ينتهي ${new Date(activeCode.expires_at).toLocaleString('ar')}` : 'دون وقت انتهاء'}</p><div className="mt-3 flex gap-2"><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2" onClick={copyCode}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? 'تم النسخ' : 'نسخ'}</button><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2" disabled={saving} onClick={deactivate}><Power size={16} /> إيقاف</button></div></div> : <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_190px_auto]"><label className="mol-label">الاختبار<select className="mol-input mt-1" value={examId} onChange={(event) => setExamId(event.target.value)}><option value="">اختر اختباراً متاحاً</option>{available.map((exam) => <option key={exam.id} value={exam.id}>{exam.title}</option>)}</select></label><label className="mol-label">الصلاحية بالساعات<input className="mol-input mt-1" type="number" min="1" step="1" value={expiryHours} onChange={(event) => setExpiryHours(event.target.value)} placeholder="فارغ = بدون انتهاء" /></label><button type="button" className="mol-btn mol-btn-primary mt-auto inline-flex items-center justify-center gap-2 px-4 py-2.5" disabled={saving || !examId} onClick={issue}>{saving ? <Loader2 size={17} className="animate-spin" /> : <RefreshCw size={17} />} إنشاء الرمز</button></div>}
+      {!loading && !available.length && !activeCode && <p className="text-sm font-bold" style={{ color: 'var(--mol-amber)' }}>استورد اختباراً متاحاً أولاً لإنشاء رمز دخول.</p>}
+      {error && <p role="alert" className="font-bold" style={{ color: 'var(--mol-red)' }}>{error}</p>}
     </section>
   );
 }
