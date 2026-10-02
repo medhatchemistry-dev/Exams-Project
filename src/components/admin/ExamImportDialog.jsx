@@ -32,8 +32,8 @@ export default function ExamImportDialog({ onClose, onImported }) {
     try {
       const { data, error: authError } = await (await import('@/api/supabaseClient')).supabase.auth.getUser();
       if (authError) throw authError;
-      await saveExam({ title: title.trim(), source_filename: file.name, banks: preview.banks, created_by: data.user?.id ?? null });
-      onImported();
+      const savedExam = await saveExam({ title: title.trim(), source_filename: file.name, banks: preview.banks, created_by: data.user?.id ?? null });
+      onImported(savedExam);
     } catch (saveError) {
       console.error('Exam save failed:', saveError);
       setError('تعذر حفظ الاختبار. تحقق من قاعدة البيانات وصلاحية المعلم.');

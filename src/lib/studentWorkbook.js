@@ -3,7 +3,7 @@ import { STRUCTURE } from './academicStructure.js';
 
 export const MAX_STUDENT_WORKBOOK_BYTES = 10 * 1024 * 1024;
 export const MAX_STUDENT_ROWS = 5000;
-export const STUDENT_COLUMNS = ['student_number', 'full_name', 'grade', 'track', 'section'];
+export const STUDENT_COLUMNS = ['student_number', 'full_name_ar', 'full_name_en', 'grade', 'track', 'section'];
 
 function stringValue(value) {
   if (value == null) return '';
@@ -18,24 +18,25 @@ function makeStudentWorkbook() {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Students');
   worksheet.columns = [
-    { header: 'student_number', key: 'student_number', width: 20, style: { numFmt: '@' } },
-    { header: 'full_name', key: 'full_name', width: 32 },
-    { header: 'grade', key: 'grade', width: 12 },
-    { header: 'track', key: 'track', width: 18 },
-    { header: 'section', key: 'section', width: 12 },
+    { header: 'student_number (رقم الطالب)', key: 'student_number', width: 26, style: { numFmt: '@' } },
+    { header: 'full_name_ar (الاسم بالعربية)', key: 'full_name_ar', width: 32 },
+    { header: 'full_name_en (الاسم بالإنجليزية)', key: 'full_name_en', width: 34 },
+    { header: 'grade (الصف)', key: 'grade', width: 18 },
+    { header: 'track (المسار)', key: 'track', width: 24 },
+    { header: 'section (الشعبة)', key: 'section', width: 20 },
   ];
   worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173B64' } };
-  worksheet.addRow({ student_number: '00000', full_name: 'مثال: أحمد محمد', grade: '12', track: 'عام', section: '1' });
+  worksheet.addRow({ student_number: '00000', full_name_ar: 'مثال: أحمد محمد', full_name_en: 'Example: Ahmed Mohamed', grade: '12', track: 'عام', section: '1' });
   worksheet.getRow(2).font = { italic: true, color: { argb: 'FF64748B' } };
   worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-  worksheet.autoFilter = 'A1:E1';
+  worksheet.autoFilter = 'A1:F1';
 
   const reference = workbook.addWorksheet('Reference');
   reference.columns = [
-    { header: 'grade', key: 'grade', width: 12 },
-    { header: 'track', key: 'track', width: 18 },
-    { header: 'section', key: 'section', width: 12 },
+    { header: 'grade (الصف)', key: 'grade', width: 18 },
+    { header: 'track (المسار)', key: 'track', width: 24 },
+    { header: 'section (الشعبة)', key: 'section', width: 20 },
   ];
   for (const [grade, tracks] of Object.entries(STRUCTURE)) {
     for (const [track, sections] of Object.entries(tracks)) {
@@ -56,7 +57,8 @@ export function validateStudentRows(rows, existingStudentNumbers = new Set()) {
 
   const normalized = rows.map((row) => ({
     student_number: stringValue(row.student_number),
-    full_name: stringValue(row.full_name),
+    full_name_ar: stringValue(row.full_name_ar),
+    full_name_en: stringValue(row.full_name_en),
     grade: stringValue(row.grade),
     track: stringValue(row.track),
     section: stringValue(row.section),
@@ -72,7 +74,8 @@ export function validateStudentRows(rows, existingStudentNumbers = new Set()) {
   normalized.forEach((row, index) => {
     const errors = [];
     if (!row.student_number || row.student_number.length > 80) errors.push('رقم الطالب مطلوب ويجب ألا يتجاوز 80 محرفاً.');
-    if (!row.full_name || row.full_name.length > 160) errors.push('اسم الطالب مطلوب ويجب ألا يتجاوز 160 محرفاً.');
+    if (!row.full_name_ar || row.full_name_ar.length > 160) errors.push('الاسم بالعربية مطلوب ويجب ألا يتجاوز 160 محرفاً.');
+    if (!row.full_name_en || row.full_name_en.length > 160) errors.push('الاسم بالإنجليزية مطلوب ويجب ألا يتجاوز 160 محرفاً.');
     if (!STRUCTURE[row.grade]?.[row.track]?.includes(row.section)) errors.push('الصف أو المسار أو الشعبة غير معتمدة.');
     if (row.student_number && counts.get(row.student_number) > 1) errors.push('رقم الطالب مكرر داخل الملف.');
     const { sourceRow = index + 2, ...student } = row;
@@ -92,7 +95,7 @@ export async function parseStudentWorkbook(input, existingStudentNumbers = new S
   await workbook.xlsx.load(input);
   const worksheet = workbook.getWorksheet('Students');
   if (!worksheet) throw new Error('الملف لا يحتوي ورقة باسم Students. حمّل القالب واستخدمه.');
-  const headerValues = worksheet.getRow(1).values.slice(1).map((value) => stringValue(value).toLowerCase());
+  const headerValues = worksheet.getRow(1).values.slice(1).map((value) => stringValue(value).toLowerCase().split(' (')[0].trim());
   const columnIndexes = Object.fromEntries(STUDENT_COLUMNS.map((column) => [column, headerValues.indexOf(column) + 1]));
   const missing = STUDENT_COLUMNS.filter((column) => !columnIndexes[column]);
   if (missing.length) throw new Error(`الأعمدة المطلوبة غير موجودة: ${missing.join(', ')}`);
@@ -102,7 +105,7 @@ export async function parseStudentWorkbook(input, existingStudentNumbers = new S
   worksheet.eachRow((excelRow, rowNumber) => {
     const row = Object.fromEntries(STUDENT_COLUMNS.map((column) => [column, stringValue(excelRow.getCell(columnIndexes[column]).value)]));
     if (Object.values(row).every((value) => !value)) return;
-    if (rowNumber === 2 && row.student_number === '00000' && row.full_name.startsWith('مثال:')) return;
+    if (rowNumber === 2 && row.student_number === '00000' && row.full_name_ar.startsWith('مثال:')) return;
     rows.push({ ...row, sourceRow: rowNumber });
   });
   if (!rows.length) throw new Error('لم يتم العثور على طلاب بعد صف المثال.');

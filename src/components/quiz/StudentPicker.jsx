@@ -32,7 +32,7 @@ export default function StudentPicker({ onStart }) {
       try {
         const { data, error } = await supabase
           .from('students')
-          .select('id, full_name, student_number, grade, track, section')
+          .select('id, full_name, full_name_ar, full_name_en, student_number, grade, track, section')
           .eq('grade', grade)
           .eq('track', track)
           .eq('section', section)
@@ -57,7 +57,7 @@ export default function StudentPicker({ onStart }) {
 
   const confirmSelected = () => {
     if (!selected) return;
-    onStart({ name: selected.full_name, id: selected.student_number, grade, track, section, isOther: false });
+    onStart({ name: selected.full_name_ar || selected.full_name, nameEnglish: selected.full_name_en || '', id: selected.student_number, grade, track, section, isOther: false });
   };
 
   return (
@@ -98,7 +98,7 @@ export default function StudentPicker({ onStart }) {
           ) : (
             <select className="mol-input" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
               <option value="">— اختر اسمك — ({students.length} طالب)</option>
-              {students.map((s) => <option key={s.id} value={s.student_number}>{s.full_name}</option>)}
+              {students.map((s) => <option key={s.id} value={s.student_number}>{s.full_name_ar || s.full_name}{s.full_name_en ? ` — ${s.full_name_en}` : ''}</option>)}
             </select>
           )}
           <div className="flex flex-wrap gap-3 mt-4">

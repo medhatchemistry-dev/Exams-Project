@@ -8,9 +8,11 @@ export function splitIntoBatches(rows, batchSize = STUDENT_UPSERT_BATCH_SIZE) {
 }
 
 export function toStudentWriteRows(rows) {
-  return rows.map(({ student_number, full_name, grade, track, section }) => ({
+  return rows.map(({ student_number, full_name_ar, full_name_en, full_name, grade, track, section }) => ({
     student_number,
-    full_name,
+    full_name: full_name_ar || full_name,
+    full_name_ar: full_name_ar || full_name,
+    full_name_en,
     grade,
     track,
     section,

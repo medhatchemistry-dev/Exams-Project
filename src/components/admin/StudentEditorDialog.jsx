@@ -4,7 +4,8 @@ import { STRUCTURE, GRADE_LABELS } from '@/lib/academicStructure';
 export default function StudentEditorDialog({ student, saving, onClose, onSave }) {
   const [values, setValues] = useState({
     student_number: student?.student_number || '',
-    full_name: student?.full_name || '',
+    full_name_ar: student?.full_name_ar || student?.full_name || '',
+    full_name_en: student?.full_name_en || '',
     grade: student?.grade || '',
     track: student?.track || '',
     section: student?.section || '',
@@ -36,7 +37,8 @@ export default function StudentEditorDialog({ student, saving, onClose, onSave }
         <h3 id="student-editor-title" className="text-xl font-extrabold">{student ? 'تعديل بيانات الطالب' : 'إضافة طالب'}</h3>
         <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={submit}>
           <label className="mol-label">رقم الطالب<input className="mol-input mt-1" required maxLength={80} value={values.student_number} disabled={Boolean(student)} onChange={(event) => change('student_number', event.target.value)} /></label>
-          <label className="mol-label">اسم الطالب<input className="mol-input mt-1" required maxLength={160} value={values.full_name} onChange={(event) => change('full_name', event.target.value)} /></label>
+          <label className="mol-label">الاسم بالعربية<input className="mol-input mt-1" required maxLength={160} value={values.full_name_ar} onChange={(event) => change('full_name_ar', event.target.value)} /></label>
+          <label className="mol-label">الاسم بالإنجليزية<input className="mol-input mt-1" required maxLength={160} dir="ltr" value={values.full_name_en} onChange={(event) => change('full_name_en', event.target.value)} /></label>
           <label className="mol-label">الصف<select className="mol-input mt-1" required value={values.grade} onChange={(event) => change('grade', event.target.value)}><option value="">اختر الصف</option>{Object.keys(STRUCTURE).map((grade) => <option value={grade} key={grade}>{GRADE_LABELS[grade]} ({grade})</option>)}</select></label>
           <label className="mol-label">المسار<select className="mol-input mt-1" required disabled={!values.grade} value={values.track} onChange={(event) => change('track', event.target.value)}><option value="">اختر المسار</option>{tracks.map((track) => <option value={track} key={track}>{track}</option>)}</select></label>
           <label className="mol-label">الشعبة<select className="mol-input mt-1" required disabled={!values.track} value={values.section} onChange={(event) => change('section', event.target.value)}><option value="">اختر الشعبة</option>{sections.map((section) => <option value={section} key={section}>{section}</option>)}</select></label>

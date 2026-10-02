@@ -3,11 +3,14 @@ import { splitIntoBatches, toStudentWriteRows } from './studentRows.js';
 export { splitIntoBatches, toStudentWriteRows } from './studentRows.js';
 
 export async function listStudents({ search = '', grade = '', track = '', section = '', from = 0, pageSize = 100 } = {}) {
-  let query = supabase.from('students').select('id, student_number, full_name, grade, track, section, created_at', { count: 'exact' }).order('grade').order('track').order('section').order('full_name').range(from, from + pageSize - 1);
+  let query = supabase.from('students').select('id, student_number, full_name, full_name_ar, full_name_en, grade, track, section, created_at', { count: 'exact' }).order('grade').order('track').order('section').order('full_name_ar').range(from, from + pageSize - 1);
   if (grade) query = query.eq('grade', grade);
   if (track) query = query.eq('track', track);
   if (section) query = query.eq('section', section);
-  if (search.trim()) query = query.or(`full_name.ilike.%${search.trim().replace(/[,%()]/g, '')}%,student_number.ilike.%${search.trim().replace(/[,%()]/g, '')}%`);
+  if (search.trim()) {
+    const term = search.trim().replace(/[,%()]/g, '');
+    query = query.or(`full_name.ilike.%${term}%,full_name_ar.ilike.%${term}%,full_name_en.ilike.%${term}%,student_number.ilike.%${term}%`);
+  }
   const { data, error, count } = await query;
   if (error) throw error;
   return { rows: data || [], count: count || 0 };

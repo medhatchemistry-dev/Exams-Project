@@ -340,7 +340,7 @@ export default function QuizApp() {
       }
 
       setQuestions(finalQuestions);
-      setResult({ score, total, submissionTime, examTitle: validatedExam?.legacy ? 'الاختبار الحالي' : validatedExam?.examTitle || 'الاختبار' });
+      setResult({ score, total, submissionTime, examTitle: validatedExam?.legacy ? 'الاختبار الحالي' : validatedExam?.examTitle || 'الاختبار', certificateTemplateId: validatedExam?.certificateTemplateId || 1 });
       setScreen('result');
       window.scrollTo({ top: 0 });
     },
@@ -407,6 +407,7 @@ export default function QuizApp() {
         <ResultScreen
           student={student}
           examTitle={result.examTitle}
+          certificateTemplateId={result.certificateTemplateId}
           score={result.score}
           total={result.total}
           submissionTime={result.submissionTime}

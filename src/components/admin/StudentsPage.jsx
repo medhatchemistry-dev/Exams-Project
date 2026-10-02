@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Download, Edit3, Loader2, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
 import { STRUCTURE, GRADE_LABELS } from '@/lib/academicStructure';
 import { downloadStudentTemplate, parseStudentWorkbook, validateStudentRows } from '@/lib/studentWorkbook';
@@ -108,7 +109,7 @@ export default function StudentsPage() {
     setError('');
     try {
       await deleteStudent(deleteCandidate.id);
-      setNotice(`تم حذف سجل ${deleteCandidate.full_name}.`);
+      setNotice(`تم حذف سجل ${deleteCandidate.full_name_ar || deleteCandidate.full_name}.`);
       setDeleteCandidate(null);
       await refresh();
     } catch (deleteError) {
@@ -146,7 +147,7 @@ export default function StudentsPage() {
 
       <div className="mol-card overflow-hidden">
         {loading ? <div className="flex items-center gap-2 p-8 font-bold" role="status"><Loader2 className="animate-spin" size={18} /> جاري تحميل سجل الطلاب…</div> : students.length === 0 ? <div className="p-10 text-center"><Users size={30} className="mx-auto mb-3" style={{ color: 'var(--mol-muted)' }} /><h3 className="font-extrabold">لا يوجد طلاب مطابقون</h3><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>أضف طالباً جديداً أو استورد قالب Excel.</p></div> : (
-          <div className="overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead><tr className="border-b text-right" style={{ borderColor: 'var(--mol-line-strong)' }}>{['رقم الطالب', 'الاسم', 'الصف', 'المسار', 'الشعبة', 'الإجراءات'].map((heading) => <th key={heading} scope="col" className="px-4 py-3 font-extrabold">{heading}</th>)}</tr></thead><tbody>{students.map((student) => <tr key={student.id} className="border-b last:border-0" style={{ borderColor: 'var(--mol-line-strong)' }}><td className="px-4 py-3 font-mono">{student.student_number}</td><td className="px-4 py-3 font-extrabold">{student.full_name}</td><td className="px-4 py-3">{student.grade}</td><td className="px-4 py-3">{student.track}</td><td className="px-4 py-3">{student.section}</td><td className="px-4 py-3"><div className="flex gap-2"><button type="button" aria-label={`تعديل ${student.full_name}`} className="mol-btn mol-btn-ghost p-2" onClick={() => setEditor({ student })}><Edit3 size={16} /></button><button type="button" aria-label={`حذف ${student.full_name}`} className="mol-btn mol-btn-ghost p-2" onClick={() => setDeleteCandidate(student)}><Trash2 size={16} style={{ color: 'var(--mol-red)' }} /></button></div></td></tr>)}</tbody></table></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead><tr className="border-b text-right" style={{ borderColor: 'var(--mol-line-strong)' }}>{['رقم الطالب', 'الاسم بالعربية', 'الاسم بالإنجليزية', 'الصف', 'المسار', 'الشعبة', 'الإجراءات'].map((heading) => <th key={heading} scope="col" className="px-4 py-3 font-extrabold">{heading}</th>)}</tr></thead><tbody>{students.map((student) => <tr key={student.id} className="border-b last:border-0" style={{ borderColor: 'var(--mol-line-strong)' }}><td className="px-4 py-3 font-mono">{student.student_number}</td><td className="px-4 py-3 font-extrabold"><Link className="underline decoration-dotted underline-offset-4" to={`/admin/students/${student.id}`}>{student.full_name_ar || student.full_name}</Link></td><td className="px-4 py-3" dir="ltr">{student.full_name_en || '—'}</td><td className="px-4 py-3">{student.grade}</td><td className="px-4 py-3">{student.track}</td><td className="px-4 py-3">{student.section}</td><td className="px-4 py-3"><div className="flex gap-2"><button type="button" aria-label={`تعديل ${student.full_name_ar || student.full_name}`} className="mol-btn mol-btn-ghost p-2" onClick={() => setEditor({ student })}><Edit3 size={16} /></button><button type="button" aria-label={`حذف ${student.full_name_ar || student.full_name}`} className="mol-btn mol-btn-ghost p-2" onClick={() => setDeleteCandidate(student)}><Trash2 size={16} style={{ color: 'var(--mol-red)' }} /></button></div></td></tr>)}</tbody></table></div>
         )}
       </div>
 
@@ -154,7 +155,7 @@ export default function StudentsPage() {
 
       {editor && <StudentEditorDialog student={editor.student} saving={saving} onClose={() => setEditor(null)} onSave={saveManualStudent} />}
       {importRows && <StudentImportDialog preview={importRows} saving={saving} onClose={() => setImportRows(null)} onConfirm={saveImport} />}
-      {deleteCandidate && <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/50 p-4" role="presentation"><section role="alertdialog" aria-modal="true" aria-labelledby="delete-student-title" className="mol-card w-full max-w-md p-6"><h3 id="delete-student-title" className="text-lg font-extrabold">تأكيد حذف الطالب</h3><p className="mt-2 font-bold" style={{ color: 'var(--mol-muted)' }}>سيتم حذف سجل {deleteCandidate.full_name} ({deleteCandidate.student_number}). هذا الإجراء لا يحذف نتائج الاختبارات السابقة.</p><div className="mt-5 flex justify-end gap-2"><button type="button" className="mol-btn mol-btn-ghost px-4 py-2" disabled={saving} onClick={() => setDeleteCandidate(null)}>إلغاء</button><button type="button" className="mol-btn px-4 py-2" disabled={saving} style={{ background: 'var(--mol-red)', color: 'white' }} onClick={confirmDelete}>{saving ? 'جارٍ الحذف…' : 'حذف الطالب'}</button></div></section></div>}
+      {deleteCandidate && <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/50 p-4" role="presentation"><section role="alertdialog" aria-modal="true" aria-labelledby="delete-student-title" className="mol-card w-full max-w-md p-6"><h3 id="delete-student-title" className="text-lg font-extrabold">تأكيد حذف الطالب</h3><p className="mt-2 font-bold" style={{ color: 'var(--mol-muted)' }}>سيتم حذف سجل {deleteCandidate.full_name_ar || deleteCandidate.full_name} ({deleteCandidate.student_number}). هذا الإجراء لا يحذف نتائج الاختبارات السابقة.</p><div className="mt-5 flex justify-end gap-2"><button type="button" className="mol-btn mol-btn-ghost px-4 py-2" disabled={saving} onClick={() => setDeleteCandidate(null)}>إلغاء</button><button type="button" className="mol-btn px-4 py-2" disabled={saving} style={{ background: 'var(--mol-red)', color: 'white' }} onClick={confirmDelete}>{saving ? 'جارٍ الحذف…' : 'حذف الطالب'}</button></div></section></div>}
     </section>
   );
 }

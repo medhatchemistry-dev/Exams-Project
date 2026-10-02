@@ -16,6 +16,7 @@ import AdminHome from '@/components/admin/AdminHome';
 import ScoresPage from '@/components/admin/ScoresPage';
 import CertificatesPage from '@/components/admin/CertificatesPage';
 import StudentsPage from '@/components/admin/StudentsPage';
+import StudentHistoryPage from '@/components/admin/StudentHistoryPage';
 import ExamsPage from '@/components/admin/ExamsPage';
 
 const AuthenticatedApp = () => {
@@ -29,6 +30,7 @@ const AuthenticatedApp = () => {
           <Route path="scores" element={<ScoresPage />} />
           <Route path="certificates" element={<CertificatesPage />} />
           <Route path="students" element={<StudentsPage />} />
+          <Route path="students/:studentId" element={<StudentHistoryPage />} />
           <Route path="exams" element={<ExamsPage />} />
         </Route>
       </Route>

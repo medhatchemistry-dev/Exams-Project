@@ -9,6 +9,6 @@ test('splits roster writes into bounded batches', () => {
 });
 
 test('strips import preview metadata before database writes', () => {
-  const rows = toStudentWriteRows([{ student_number: '1', full_name: 'مريم', grade: '12', track: 'عام', section: '1', action: 'update', sourceRow: 3 }]);
-  assert.deepEqual(rows, [{ student_number: '1', full_name: 'مريم', grade: '12', track: 'عام', section: '1' }]);
+  const rows = toStudentWriteRows([{ student_number: '1', full_name_ar: 'مريم', full_name_en: 'Maryam', grade: '12', track: 'عام', section: '1', action: 'update', sourceRow: 3 }]);
+  assert.deepEqual(rows, [{ student_number: '1', full_name: 'مريم', full_name_ar: 'مريم', full_name_en: 'Maryam', grade: '12', track: 'عام', section: '1' }]);
 });

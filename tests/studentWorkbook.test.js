@@ -8,16 +8,17 @@ test('creates a template with the required headers, example, and reference sheet
   const references = workbook.getWorksheet('Reference');
   assert.ok(students);
   assert.ok(references);
-  assert.deepEqual(students.getRow(1).values.slice(1), ['student_number', 'full_name', 'grade', 'track', 'section']);
+  assert.deepEqual(students.getRow(1).values.slice(1), ['student_number (رقم الطالب)', 'full_name_ar (الاسم بالعربية)', 'full_name_en (الاسم بالإنجليزية)', 'grade (الصف)', 'track (المسار)', 'section (الشعبة)']);
   assert.equal(students.getRow(2).getCell(2).value, 'مثال: أحمد محمد');
-  assert.equal(references.getCell('A1').value, 'grade');
+  assert.equal(students.getRow(2).getCell(3).value, 'Example: Ahmed Mohamed');
+  assert.equal(references.getCell('A1').value, 'grade (الصف)');
   assert.ok((await workbook.xlsx.writeBuffer()).byteLength > 0);
 });
 
 test('validates valid rows and recognizes database IDs as updates', () => {
   const result = validateStudentRows([
-    { student_number: '10001', full_name: 'طالبة', grade: '12', track: 'عام', section: '1' },
-    { student_number: '10002', full_name: 'طالب', grade: '10', track: 'متقدم', section: '1' },
+    { student_number: '10001', full_name_ar: 'طالبة', full_name_en: 'Student A', grade: '12', track: 'عام', section: '1' },
+    { student_number: '10002', full_name_ar: 'طالب', full_name_en: 'Student B', grade: '10', track: 'متقدم', section: '1' },
   ], new Set(['10001']));
   assert.equal(result.validRows.length, 2);
   assert.deepEqual(result.validRows.map((row) => row.action), ['update', 'insert']);
@@ -26,10 +27,10 @@ test('validates valid rows and recognizes database IDs as updates', () => {
 
 test('rejects invalid academic combinations and duplicate IDs in one workbook', () => {
   const result = validateStudentRows([
-    { student_number: '10001', full_name: 'طالبة', grade: '10', track: 'عام', section: '1' },
-    { student_number: '10002', full_name: '', grade: '12', track: 'عام', section: '1' },
-    { student_number: '10003', full_name: 'طالب', grade: '12', track: 'عام', section: '2' },
-    { student_number: '10003', full_name: 'طالب مكرر', grade: '12', track: 'عام', section: '2' },
+    { student_number: '10001', full_name_ar: 'طالبة', full_name_en: 'Student A', grade: '10', track: 'عام', section: '1' },
+    { student_number: '10002', full_name_ar: '', full_name_en: '', grade: '12', track: 'عام', section: '1' },
+    { student_number: '10003', full_name_ar: 'طالب', full_name_en: 'Student C', grade: '12', track: 'عام', section: '2' },
+    { student_number: '10003', full_name_ar: 'طالب مكرر', full_name_en: 'Duplicate Student', grade: '12', track: 'عام', section: '2' },
   ]);
   assert.equal(result.validRows.length, 0);
   assert.equal(result.invalidRows.length, 4);
@@ -40,7 +41,7 @@ test('rejects invalid academic combinations and duplicate IDs in one workbook', 
 test('parses uploaded XLSX rows from the documented worksheet', async () => {
   const workbook = createStudentTemplate();
   const sheet = workbook.getWorksheet('Students');
-  sheet.addRow(['20001', 'مريم', '11', 'متقدم', '2']);
+  sheet.addRow(['20001', 'مريم', 'Maryam', '11', 'متقدم', '2']);
   const parsed = await parseStudentWorkbook(await workbook.xlsx.writeBuffer());
   assert.equal(parsed.validRows.length, 1);
   assert.equal(parsed.validRows[0].student_number, '20001');
