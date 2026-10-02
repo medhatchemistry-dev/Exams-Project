@@ -1,4 +1,4 @@
-# Exams Project
+# Exams Project.
 
 A chemistry assessment app for students and teachers. Students enter an active exam code, identify themselves from the class roster (or enter their details manually), complete a randomized quiz, and submit their results. Teachers can manage exam access, review and export results, and generate certificates.
 
