@@ -1,6 +1,6 @@
 # Admin Workflows and Import System
 
-**Status:** Approved conversational design; awaiting written-spec review
+**Status:** Accepted
 **Date:** 2026-10-02
 **Target branch:** `dev`
 
@@ -100,7 +100,7 @@ An exam must contain at least one valid bank. Question count is determined by th
 
 ### Evidence and root cause
 
-The deployed `teacher-login` and `validate-exam-code` functions currently accept local development origins plus a hard-coded `exams-project*.vercel.app` hostname pattern. After the owner changed the Vercel domain, Supabase logs show repeated `OPTIONS` preflight requests returning HTTP 200 but no `Access-Control-Allow-Origin` header; the browser therefore blocks the login request before a `POST` reaches password verification. This is an origin allowlist/CORS failure, not evidence of an incorrect database password.
+The deployed `teacher-login` and `validate-exam-code` functions currently accept local development origins plus a hard-coded `exams-project*.vercel.app` hostname pattern. After the owner changed the Vercel domain, Supabase logs show repeated `OPTIONS` preflight requests but no later `POST` login requests; this is consistent with the browser blocking login before password verification. Function request logs do not retain the `Origin` header, so the exact rejected hostname is not proven from logs. The reachable hostname `hamzacross100.online` currently serves the Vercel project titled “Hamza”, not the Exams app, and must not be allowlisted for Exams without owner confirmation. Root-cause hypothesis: the actual Exams custom domain is absent from the hard-coded CORS allowlist.
 
 ### Required implementation
 
@@ -113,7 +113,7 @@ The deployed `teacher-login` and `validate-exam-code` functions currently accept
 
 ### Operational acceptance criteria
 
-1. The confirmed Vercel production origin and the intended preview origins are configured as exact values in the Supabase Edge Function secret. No domain is guessed or broadened to all of `vercel.app`.
+1. The confirmed Exams Vercel production origin and intended preview origins are configured as exact values in the Supabase Edge Function secret. The owner must supply or confirm these values; no domain is guessed or broadened to all of `vercel.app`.
 2. An allowed custom origin receives `Access-Control-Allow-Origin` on preflight and actual responses, and teacher-login reaches password verification.
 3. An unlisted origin does not receive an allow-origin header and its POST is rejected.
 4. Both Edge Functions continue to accept the configured localhost origins for development.
@@ -196,4 +196,4 @@ Add a forward-only Supabase migration; do not edit migrations already applied to
 - **Safety:** Uploaded data is never executed, sanitizer behavior is bounded, exam contents are inaccessible directly to public roles, and all roster/exam writes are teacher-only.
 - **Scope:** New exam editing is deliberately limited to metadata/lifecycle; exam authoring and arbitrary page parsing are non-goals.
 - **Ambiguity:** Invalid spreadsheet rows block import; existing database student numbers update; duplicate numbers within the file are rejected. These rules are explicit.
-- **Domain input:** The new production hostname is not visible in the connected Vercel account data. The exact origin must be supplied or discovered from the intended Vercel deployment before writing the Supabase allowlist configuration; the specification does not guess it.
+- **Domain input:** The accessible Vercel account does not contain an Exams project. `hamzacross100.online` resolves to the unrelated “Hamza” project and will not be allowlisted for Exams. The exact Exams production/preview origins must be supplied or discovered from the correct Vercel project before setting the Supabase allowlist secret; the specification does not guess them.
