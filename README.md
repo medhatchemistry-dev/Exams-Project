@@ -1,31 +1,122 @@
 # Exams Project
 
-Chemistry assessment app built with React, Vite, and Supabase. The original Base44 version is preserved on branch `backup/base44-v1`.
+A chemistry assessment app for students and teachers. Students enter an active exam code, identify themselves from the class roster (or enter their details manually), complete a randomized quiz, and submit their results. Teachers can manage exam access, review and export results, and generate certificates.
 
-## Local setup.
+The app uses React, Vite, and Supabase. The earlier Base44 version is preserved on the [`backup/base44-v1`](https://github.com/medhatchemistry-dev/Exams-Project/tree/backup/base44-v1) branch.
 
-1. Install Node.js 20.19+ and run `npm install`.
-2. Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
-3. Start the frontend with `npm run dev`.
+## Features
 
-The quiz and registration are public. Students can choose themselves from `students` or use the manual “Other” form. Student quiz results are written to Supabase. The `/admin` dashboard requires a Supabase Auth user granted the teacher role in `public.teacher_roles`.
+- Student quiz flow with grade, track, section, and roster selection.
+- Manual student entry when a name is not listed.
+- Time-limited or open-ended exam access codes managed by teachers.
+- Question and answer shuffling, exam security prompts, and result submission.
+- Teacher dashboard for results, CSV export, certificates, and source access.
+- Supabase Auth, role-protected teacher features, database row-level security, and Edge Functions.
 
-## Supabase
+## Local development
 
-The schema and RLS policies are in `supabase/migrations/`. Apply migrations with the Supabase CLI (`supabase db push`) or the Supabase dashboard. Roster rows are stored in `public.students`; only teachers should be granted database write access to this table.
+### Requirements
 
-The student entry screen checks codes through the `validate-exam-code` Edge Function; the password-only teacher login uses `teacher-login`. Deploy both functions and apply the matching database migrations before enabling the exam. Store the teacher password as a bcrypt hash in the single allowed row of `public.teacher_login_passwords`; never put the password or its hash in the browser bundle or Git. The function requires a configured teacher Auth identity to create a session.
+- Node.js 20.19 or newer.
+- npm.
+- A Supabase project with the database migrations and Edge Functions configured (see [Supabase setup](#supabase-setup)).
 
-To grant an existing Auth user teacher access, look up their user UUID in Supabase Authentication and run:
+### Run the app
 
-```sql
-insert into public.teacher_roles (user_id)
-values ('<auth-user-uuid>');
+1. Clone the repository and switch to the development branch:
+
+   ```bash
+   git clone --branch dev https://github.com/medhatchemistry-dev/Exams-Project.git
+   cd Exams-Project
+   ```
+
+2. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+3. Create `.env.local` in the repository root with your Supabase project URL and **publishable** key:
+
+   ```dotenv
+   VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+   VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
+   ```
+
+   Get these values from your Supabase project's API settings. Do not put a service-role or secret key in a `VITE_` variable; Vite embeds client variables in the browser bundle.
+
+4. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+Vite prints the local URL (normally `http://localhost:5173`). The frontend requires both Supabase variables at startup.
+
+## Application routes
+
+| Path | Purpose |
+| --- | --- |
+| `/` | Student exam access, registration, quiz, and result flow |
+| `/admin` | Teacher login and administration dashboard |
+| `/register` | Public Supabase Auth registration; registration does not grant teacher access |
+| `/reset-password` | Password reset flow |
+
+The teacher dashboard is available only to authenticated users with a row in `public.teacher_roles`. Teacher sign-in is handled by the `teacher-login` Edge Function.
+
+## Supabase setup
+
+Database schema and row-level security policies are versioned in `supabase/migrations/`. They cover the student roster, exam results, teacher roles, exam access codes, teacher password verification, and access-attempt rate limiting.
+
+### Apply database migrations
+
+Install and authenticate the [Supabase CLI](https://supabase.com/docs/guides/cli). This repository has migrations and functions under `supabase/` but does not currently include a CLI `config.toml`, so initialize the local Supabase project configuration first:
+
+```bash
+supabase login
+supabase init
+supabase link --project-ref YOUR_PROJECT_REF
+supabase db push
 ```
 
-Public signup does not grant a role. Never put a service-role key in frontend environment variables.
+Review the migrations before applying them to a project with existing data. You can also apply the SQL migrations through the Supabase dashboard.
 
-## Checks and deployment.
+### Deploy Edge Functions
+
+The app calls two functions:
+
+- `validate-exam-code` checks that a student-provided code is active and has not expired.
+- `teacher-login` verifies the teacher password, applies rate limiting, and creates the teacher Auth session.
+
+Deploy both functions to the linked project:
+
+```bash
+supabase functions deploy validate-exam-code
+supabase functions deploy teacher-login
+```
+
+Both functions use server-side Supabase secrets. Never expose a service-role/secret key, teacher password, or password hash in the frontend, repository, or Git history. The teacher password hash is stored in the single allowed row of `public.teacher_login_passwords` and checked server-side. `teacher-login` uses `TEACHER_LOGIN_EMAIL` when configured; otherwise it uses the default email in the function source, then creates or updates the matching Auth identity after password verification.
+
+The Edge Functions currently allow local development origins (`localhost` and `127.0.0.1`) and HTTPS hosts matching `exams-project` Vercel deployment domains. Update their origin allowlist if the app is served from a different custom domain.
+
+## Project structure
+
+```text
+src/
+  pages/                 Student quiz, teacher dashboard, and auth routes
+  components/            Quiz and teacher-dashboard UI
+  api/supabaseClient.js  Supabase browser client
+  lib/                   Auth, question-bank, export, and app utilities
+public/
+  question-bank.html     Bundled chemistry question bank
+supabase/
+  functions/             Exam-code validation and teacher-login functions
+  migrations/            Database schema, policies, and security changes
+```
+
+## Quality checks
+
+Run the checks defined in `package.json` before submitting changes:
 
 ```bash
 npm run lint
@@ -33,4 +124,6 @@ npm run typecheck
 npm run build
 ```
 
-The Vercel project should be linked to the private GitHub repository. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` for production, preview, and development before deploying. Pushes to `main` then trigger production deployments.
+## Deployment
+
+The app is a static Vite site built with `npm run build` (output directory: `dist/`). Configure the hosting project with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` for each environment, and deploy Supabase migrations and Edge Functions separately. Git pushes are handled by the hosting project's existing Git integration; confirm the configured deployment branch in its project settings.
