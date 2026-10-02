@@ -2,7 +2,7 @@
 
 Chemistry assessment app built with React, Vite, and Supabase. The original Base44 version is preserved on branch `backup/base44-v1`.
 
-## Local setup
+## Local setup.
 
 1. Install Node.js 20.19+ and run `npm install`.
 2. Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
