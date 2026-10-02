@@ -96,6 +96,29 @@ An exam must contain at least one valid bank. Question count is determined by th
 - A code that is invalid, expired, deactivated, or whose exam is archived cannot start. Submission must continue to revalidate code status, preserving existing behavior.
 - Retain the existing 45-minute timer, 25-question legacy default, and current anti-cheat alerts in the first increment; do not introduce unrelated exam timing settings.
 
+## Custom-domain teacher-login recovery
+
+### Evidence and root cause
+
+The deployed `teacher-login` and `validate-exam-code` functions currently accept local development origins plus a hard-coded `exams-project*.vercel.app` hostname pattern. After the owner changed the Vercel domain, Supabase logs show repeated `OPTIONS` preflight requests returning HTTP 200 but no `Access-Control-Allow-Origin` header; the browser therefore blocks the login request before a `POST` reaches password verification. This is an origin allowlist/CORS failure, not evidence of an incorrect database password.
+
+### Required implementation
+
+- Replace the hard-coded production hostname assumption with a server-side, comma-separated `APP_ALLOWED_ORIGINS` Edge Function secret containing exact serialized origins (`https://hostname`, no path or wildcard). Parse and validate every entry at startup/request; reject invalid origin configuration and unknown browser origins.
+- Share equivalent origin validation across both `teacher-login` and `validate-exam-code`. Allow the current local development origins only for HTTP localhost/127.0.0.1; allow configured production origins by exact match. Do not allow `*` or arbitrary custom domains.
+- For allowed origins, include `Access-Control-Allow-Origin` with the exact request origin, `Vary: Origin`, required request headers, and the minimum methods. For disallowed origins, reject the request and do not reflect the origin.
+- Apply the same allowlist check to preflight and actual `POST`; CORS is not the sole authorization check. Maintain teacher-role checks and server-side password verification unchanged.
+- Update/deploy both functions together and document that adding/changing a Vercel domain requires updating `APP_ALLOWED_ORIGINS` and redeploying the affected functions.
+- Do not store the teacher password in source, environment configuration, migrations, or this document. The current password remains only as a bcrypt-compatible hash in `public.teacher_login_passwords`.
+
+### Operational acceptance criteria
+
+1. The confirmed Vercel production origin and the intended preview origins are configured as exact values in the Supabase Edge Function secret. No domain is guessed or broadened to all of `vercel.app`.
+2. An allowed custom origin receives `Access-Control-Allow-Origin` on preflight and actual responses, and teacher-login reaches password verification.
+3. An unlisted origin does not receive an allow-origin header and its POST is rejected.
+4. Both Edge Functions continue to accept the configured localhost origins for development.
+5. Regression coverage verifies allowlisted and rejected origins for both functions, including the origin with a trailing slash/path being normalized or rejected consistently.
+
 ## Scores, snapshots, and compatibility
 
 - Continue deterministic shuffling for the same student and exam. Include exam identity in the shuffle seed so two exams do not share ordering merely because the student number matches.
@@ -148,7 +171,7 @@ Add a forward-only Supabase migration; do not edit migrations already applied to
 - Arbitrary HTML page-layout import, browser automation, or script execution.
 - A general-purpose exam authoring/editor platform.
 - Automatic migration of existing bundled questions into database exam rows; bundled content remains the legacy fallback until explicitly imported.
-- Changes to the teacher-password authentication design, Vercel project integration, the existing certificate visual design, or the anti-cheat policy.
+- Changes to the teacher-password authentication design, Vercel project integration, the existing certificate visual design, or the anti-cheat policy. The only auth-adjacent code change is exact-origin CORS configuration for the two existing functions.
 - New timer/duration customization beyond current behavior.
 
 ## Acceptance criteria
@@ -164,6 +187,7 @@ Add a forward-only Supabase migration; do not edit migrations already applied to
 9. Template workbook headers and reference values match the documented roster fields and academic structure.
 10. Import preview identifies insert/update/error rows. In-file duplicates and any invalid row block commit; database upsert uses `student_number` and requires teacher authorization.
 11. Lint, typecheck, production build, migration/RLS review, and browser checks cover the delivered flows before pushing to `dev`.
+12. The custom-domain CORS recovery criteria above pass for both Edge Functions before the teacher login is considered verified on the new domain.
 
 ## Spec self-review
 
@@ -172,3 +196,4 @@ Add a forward-only Supabase migration; do not edit migrations already applied to
 - **Safety:** Uploaded data is never executed, sanitizer behavior is bounded, exam contents are inaccessible directly to public roles, and all roster/exam writes are teacher-only.
 - **Scope:** New exam editing is deliberately limited to metadata/lifecycle; exam authoring and arbitrary page parsing are non-goals.
 - **Ambiguity:** Invalid spreadsheet rows block import; existing database student numbers update; duplicate numbers within the file are rejected. These rules are explicit.
+- **Domain input:** The new production hostname is not visible in the connected Vercel account data. The exact origin must be supplied or discovered from the intended Vercel deployment before writing the Supabase allowlist configuration; the specification does not guess it.
