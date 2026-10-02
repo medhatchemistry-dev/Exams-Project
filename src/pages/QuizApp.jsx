@@ -7,6 +7,7 @@ import QuizScreen from '@/components/quiz/QuizScreen';
 import ResultScreen from '@/components/quiz/ResultScreen';
 import SecurityOverlay from '@/components/quiz/SecurityOverlay';
 import { AlertModal, TeacherCodeModal } from '@/components/quiz/AlertModal';
+import ExamCodeScreen from '@/components/quiz/ExamCodeScreen';
 
 const ATTEMPTS_KEY = 'student_attempts';
 
@@ -22,7 +23,7 @@ function readAttempts() {
 export default function QuizApp() {
   const [banks, setBanks] = useState(null);
   const [banksError, setBanksError] = useState(false);
-  const [screen, setScreen] = useState('login'); // login | quiz | result
+  const [screen, setScreen] = useState('access'); // access | login | quiz | result
   const [student, setStudent] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
@@ -37,6 +38,7 @@ export default function QuizApp() {
   const alarmCtx = useRef(null);
   const alarmOsc = useRef(null);
   const pendingStudent = useRef(null);
+  const [accessCode, setAccessCode] = useState('');
 
   // load banks once
   useEffect(() => {
@@ -101,6 +103,54 @@ export default function QuizApp() {
     setAlert({ open: true, title, message, onConfirm });
   }, []);
 
+  const validateExamCode = useCallback(async (code) => {
+    const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { code } });
+    if (error) throw error;
+    if (data?.valid) {
+      setAccessCode(code);
+      setScreen('login');
+    }
+    return Boolean(data?.valid);
+  }, []);
+
+  const isExamCodeActive = useCallback(async () => {
+    if (!accessCode) return false;
+    try {
+      const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { code: accessCode } });
+      if (error) throw error;
+      return Boolean(data?.valid);
+    } catch (error) {
+      console.error('Active exam code check failed:', error);
+      return false;
+    }
+  }, [accessCode]);
+
+  useEffect(() => {
+    if (screen !== 'quiz') return undefined;
+
+    let checking = false;
+    const checkAccess = async () => {
+      if (checking || isSubmitting.current) return;
+      checking = true;
+      const stillActive = await isExamCodeActive();
+      checking = false;
+      if (stillActive || isSubmitting.current) return;
+
+      stopAlarm();
+      isSubmitting.current = false;
+      setSecurity({ open: false, warningsLeft: 3 });
+      setScreen('access');
+      setStudent(null);
+      setQuestions([]);
+      setAnswers({});
+      setAccessCode('');
+      showAlert('انتهت صلاحية الرمز', 'أوقف المعلم الاختبار أو انتهت صلاحية الرمز. لم يتم حفظ هذه المحاولة.');
+    };
+
+    const interval = window.setInterval(checkAccess, 15000);
+    return () => window.clearInterval(interval);
+  }, [screen, isExamCodeActive, showAlert, stopAlarm]);
+
   // security monitoring (only during quiz)
   useEffect(() => {
     if (screen !== 'quiz') return;
@@ -133,8 +183,13 @@ export default function QuizApp() {
   }, [stopAlarm]);
 
   const beginExam = useCallback(
-    (info) => {
+    async (info) => {
       if (!banks) return;
+      if (!await isExamCodeActive()) {
+        setScreen('access');
+        showAlert('انتهت صلاحية الرمز', 'أوقف المعلم الاختبار أو انتهت صلاحية الرمز. اطلب رمزاً صالحاً للمتابعة.');
+        return;
+      }
       const exam = buildExam(banks, info.grade, info.track, info.id);
       setStudent(info);
       setQuestions(exam);
@@ -144,7 +199,7 @@ export default function QuizApp() {
       setScreen('quiz');
       window.scrollTo({ top: 0 });
     },
-    [banks]
+    [banks, isExamCodeActive, showAlert]
   );
 
   const handleStart = useCallback(
@@ -191,6 +246,16 @@ export default function QuizApp() {
   const handleSubmit = useCallback(
     async (auto = false) => {
       if (isSubmitting.current) return;
+      if (!await isExamCodeActive()) {
+        isSubmitting.current = false;
+        setScreen('access');
+        setStudent(null);
+        setQuestions([]);
+        setAnswers({});
+        setAccessCode('');
+        showAlert('انتهت صلاحية الرمز', 'أوقف المعلم الاختبار أو انتهت صلاحية الرمز. لم يتم حفظ هذه المحاولة.');
+        return;
+      }
       isSubmitting.current = true;
       stopAlarm();
       setSecurity({ open: false, warningsLeft: 3 });
@@ -229,11 +294,12 @@ export default function QuizApp() {
       setScreen('result');
       window.scrollTo({ top: 0 });
     },
-    [questions, answers, student, stopAlarm, showAlert]
+    [questions, answers, student, stopAlarm, showAlert, isExamCodeActive]
   );
 
   const restart = useCallback(() => {
-    setScreen('login');
+    setScreen('access');
+    setAccessCode('');
     setStudent(null);
     setQuestions([]);
     setAnswers({});
@@ -267,6 +333,8 @@ export default function QuizApp() {
           </div>
         </div>
       )}
+
+      {screen === 'access' && <ExamCodeScreen onContinue={validateExamCode} />}
 
       {banks && screen === 'login' && (
         <LoginScreen onStart={handleStart} />

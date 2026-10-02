@@ -14,6 +14,8 @@ The quiz and registration are public. Students can choose themselves from `stude
 
 The schema and RLS policies are in `supabase/migrations/`. Apply migrations with the Supabase CLI (`supabase db push`) or the Supabase dashboard. Roster rows are stored in `public.students`; only teachers should be granted database write access to this table.
 
+The student entry screen checks codes through the `validate-exam-code` Edge Function; the password-only teacher login uses `teacher-login`. Deploy both functions and apply the matching database migrations before enabling the exam. Store the teacher password as a bcrypt hash in the single allowed row of `public.teacher_login_passwords`; never put the password or its hash in the browser bundle or Git. The function requires a configured teacher Auth identity to create a session.
+
 To grant an existing Auth user teacher access, look up their user UUID in Supabase Authentication and run:
 
 ```sql

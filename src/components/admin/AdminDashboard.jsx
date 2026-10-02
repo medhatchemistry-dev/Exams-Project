@@ -4,6 +4,7 @@ import ResultsPanel from './ResultsPanel';
 import CertificatesPanel from './CertificatesPanel';
 import SourceCodePanel from './SourceCodePanel';
 import { supabase } from '@/api/supabaseClient';
+import ExamAccessPanel from './ExamAccessPanel';
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState('results'); // results | certificates | source
@@ -15,11 +16,13 @@ export default function AdminDashboard() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="mol-card flex items-center justify-between p-4 md:p-5 mb-6">
-        <h1 className="text-xl font-extrabold">لوحة تحكم المعلم</h1>
+        <div className="flex items-center gap-3"><img src="/logo.svg" alt="" className="h-12 w-12 object-contain" /><h1 className="text-xl font-extrabold">لوحة تحكم المعلم</h1></div>
         <button className="mol-btn mol-btn-ghost px-4 py-2 inline-flex items-center gap-2" onClick={logout}>
           <LogOut size={16} /> خروج
         </button>
       </div>
+
+      <ExamAccessPanel />
 
       <div className="flex gap-3 mb-6">
         <button

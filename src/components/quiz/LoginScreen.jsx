@@ -19,6 +19,7 @@ export default function LoginScreen({ onStart }) {
             <Settings size={14} /> Admin
           </Link>
           <div className="relative h-full flex flex-col items-center justify-center text-center px-4">
+            <img src="/logo.svg" alt="شعار منصة لغة الكيمياء" className="absolute right-4 top-4 h-16 w-16 object-contain md:right-7 md:top-7 md:h-24 md:w-24" />
             <div className="mol-chip inline-flex items-center gap-2 px-4 py-1.5 mb-3 text-xs font-extrabold" style={{ color: 'var(--mol-green)', borderColor: 'var(--mol-green)' }}>
               <FlaskConical size={14} /> مادة الكيمياء التفاعلية
             </div>

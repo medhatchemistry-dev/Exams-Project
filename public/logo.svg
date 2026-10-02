@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-labelledby="title">
+  <title id="title">منصة لغة الكيمياء</title>
+  <defs>
+    <linearGradient id="book" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5a23b"/>
+      <stop offset=".5" stop-color="#df4c2c"/>
+      <stop offset="1" stop-color="#163e68"/>
+    </linearGradient>
+  </defs>
+  <circle cx="200" cy="200" r="187" fill="#fff" stroke="#173b64" stroke-width="8"/>
+  <circle cx="200" cy="200" r="169" fill="none" stroke="#9db6ca" stroke-width="3" stroke-dasharray="2 7"/>
+  <g fill="#e87532" stroke="#173b64" stroke-width="2">
+    <path d="M67 83h17v17H67zM316 91h17v17h-17zM51 253h17v17H51zM326 257h17v17h-17z"/>
+  </g>
+  <g fill="none" stroke="#2a789a" stroke-width="4" opacity=".9">
+    <circle cx="104" cy="131" r="8"/><circle cx="120" cy="132" r="5"/><path d="M111 123v16M96 131h16"/>
+    <circle cx="292" cy="139" r="8"/><circle cx="307" cy="139" r="5"/><path d="M299 131v16M284 139h16"/>
+    <path d="M85 305l10-17 10 17zM297 306l10-17 10 17z"/>
+  </g>
+  <g transform="translate(200 126)" fill="none" stroke-linecap="round">
+    <ellipse rx="62" ry="25" stroke="#ef7432" stroke-width="7" transform="rotate(-32)"/>
+    <ellipse rx="62" ry="25" stroke="#3287a6" stroke-width="7" transform="rotate(32)"/>
+    <circle r="9" fill="#173b64" stroke="none"/>
+    <circle cx="-45" cy="-29" r="6" fill="#f1a43a" stroke="none"/>
+    <circle cx="45" cy="29" r="6" fill="#e76032" stroke="none"/>
+    <circle cx="45" cy="-29" r="6" fill="#338caf" stroke="none"/>
+  </g>
+  <g fill="#173b64" font-family="Arial,sans-serif" font-weight="700" text-anchor="middle">
+    <text x="200" y="188" font-size="19">منصة لغة الكيمياء</text>
+    <text x="200" y="208" font-size="12" fill="#e87532">الأستاذ محمد مدحت</text>
+  </g>
+  <g transform="translate(200 267)">
+    <path d="M0 20C-32-9-79-23-123-16l30-50c42-2 75 14 93 37 18-23 51-39 93-37l30 50C79-23 32-9 0 20z" fill="#fff" stroke="url(#book)" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M0-29v48M-105-48c37-1 67 11 91 30M105-48c-37-1-67 11-91 30" fill="none" stroke="#6c9db7" stroke-width="3"/>
+    <path d="M-78-42l13-19h13l-10 19M70-40l-9-18h14l12 18" fill="none" stroke="#e87532" stroke-width="5" stroke-linecap="round"/>
+    <path d="M-10-16l10-18 10 18-10 17z" fill="#e9f2f6" stroke="#173b64" stroke-width="3"/>
+  </g>
+  <text x="200" y="337" fill="#173b64" font-family="Arial,sans-serif" font-size="14" font-weight="700" text-anchor="middle">منصة لغة الكيمياء</text>
+</svg>

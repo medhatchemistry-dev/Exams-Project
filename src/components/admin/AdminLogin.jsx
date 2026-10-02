@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Loader2, LockKeyhole } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 
 export default function AdminLogin() {
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14,10 +13,16 @@ export default function AdminLogin() {
     setError('');
     setLoading(true);
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) throw signInError;
+      const { data, error: loginError } = await supabase.functions.invoke('teacher-login', { body: { password } });
+      if (loginError) throw loginError;
+      if (!data?.session?.access_token || !data?.session?.refresh_token) {
+        throw new Error('تعذر تسجيل الدخول. تحقق من إعداد دخول المعلم.');
+      }
+      const { error: sessionError } = await supabase.auth.setSession(data.session);
+      if (sessionError) throw sessionError;
     } catch (err) {
-      setError(err.message || 'تعذر تسجيل الدخول');
+      console.error('Teacher sign-in failed:', err);
+      setError('كلمة المرور غير صحيحة أو تعذر الاتصال بخدمة الدخول. حاول مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -35,19 +40,17 @@ export default function AdminLogin() {
         </p>
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-2 text-left">
-            <label htmlFor="teacher-email" className="text-sm font-medium">البريد الإلكتروني</label>
-            <input id="teacher-email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required className="mol-input" />
-          </div>
-          <div className="space-y-2 text-left">
             <label htmlFor="teacher-password" className="text-sm font-medium">كلمة المرور</label>
-            <input id="teacher-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required className="mol-input" />
+            <div className="relative">
+              <LockKeyhole className="absolute left-3 top-1/2 -translate-y-1/2" size={17} style={{ color: 'var(--mol-muted)' }} />
+              <input id="teacher-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required className="mol-input pl-10" />
+            </div>
           </div>
           {error && <p className="text-sm font-bold" style={{ color: 'var(--mol-red)' }}>{error}</p>}
           <button type="submit" disabled={loading} className="mol-btn mol-btn-primary w-full py-3">
             {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> جاري تسجيل الدخول…</> : 'دخول'}
           </button>
         </form>
-        <Link to="/forgot-password" className="inline-block mt-4 text-sm font-bold text-primary hover:underline">نسيت كلمة المرور؟</Link>
         <Link to="/" className="inline-flex items-center gap-1.5 mt-6 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>
           <ArrowRight size={14} /> رجوع لصفحة الطالب
         </Link>

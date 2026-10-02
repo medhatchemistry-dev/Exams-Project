@@ -11,6 +11,7 @@ import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
+import { Navigate } from 'react-router-dom';
 
 const AuthenticatedApp = () => {
   // Public chemistry quiz — no auth gate required
@@ -18,9 +19,9 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route path="/" element={<QuizApp />} />
       <Route path="/admin" element={<Admin />} />
-      <Route path="/login" element={<Login />} />
+      <Route path="/login" element={<Navigate to="/admin" replace />} />
       <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/forgot-password" element={<Navigate to="/admin" replace />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
