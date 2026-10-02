@@ -233,9 +233,9 @@
 - [x] Run `node --test tests/*.test.js`, `npm run lint`, `npm run typecheck`, and `npm run build` after all code changes (`package.json` has no `npm test` script).
 - [x] Smoke `/`, `/admin`, and the exams, students, scores, and certificates routes in a browser; verify unauthenticated routes show the teacher login.
 - [ ] With a real teacher session and linked Supabase project, verify import preview/confirm, code lifecycle, workbook download/preview/upsert, and score snapshot/report.
-- [ ] Review the full diff; ensure secrets, actual domain secret values, and `.env.local` are not staged.
-- [ ] Commit focused changes with project-local Git author `medhatchemistry-dev` and push to `origin/dev` using Git only; no `gh` CLI, no Vercel tools/CLI.
-- [ ] Verify pushed SHA via `git ls-remote origin dev` and GitHub MCP; verify clean worktree.
+- [x] Review the full diff; ensure secrets, actual domain secret values, and `.env.local` are not staged.
+- [x] Commit focused changes with project-local Git author `medhatchemistry-dev` and push to `origin/dev` using Git only; no `gh` CLI, no Vercel tools/CLI.
+- [x] Verify pushed SHA via `git ls-remote origin dev` and GitHub MCP; tracked worktree is clean. Pre-existing `.playwright-mcp/` and `.superpowers/` directories remain untracked and were excluded.
 
 ## Risks and Mitigations
 
