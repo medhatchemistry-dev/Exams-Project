@@ -43,6 +43,8 @@
 
 #### Task 1: Centralize exact-origin CORS and prove login origin behavior
 
+**Deployment note:** The checked-in `teacher-login` implementation remains the repository source of truth. Supabase currently serves version 3, which resets an existing Auth user's password to the already-verified teacher password before signing in; the checked-in code tries sign-in first and resets only if that fails. This deployment discrepancy is documented for a separately approved deployment decision; no production function change is part of this plan.
+
 **Files:**
 - Create `supabase/functions/_shared/cors.js`.
 - Create `tests/cors.test.js`.
@@ -60,16 +62,16 @@
 #### Task 2: Add database contract, RLS, teacher RPCs, and migration tests
 
 **Files:**
-- The original admin/exam/roster schema migration is not present in this checkout. The plan previously named `20261002132537_admin_exam_and_roster_management.sql`, but that file is absent.
-- `supabase/migrations/20261002141722_protect_active_exam_access_codes.sql` is checked in (protects active code references on archive/delete); remote application status is unverified.
-- `supabase/migrations/20261002143305_index_exam_foreign_keys_and_restrict_issue_rpc.sql` is checked in (adds FK indexes and explicit function grants); remote application status is unverified. The prior `20261002143000_...` filename was incorrect.
-- `supabase/migrations/20261002144846_secure_imported_exam_submissions.sql` and `supabase/migrations/20261002145514_secure_imported_exam_answer_grading.sql` are checked in; remote application status is unverified.
+- `supabase/migrations/20261002132537_admin_exam_and_roster_management.sql` is recovered from the original remote migration record and checked in at its original timestamp. It defines the exam/roster schema, policies, and base RPCs required by later migrations.
+- `supabase/migrations/20261002141722_protect_active_exam_access_codes.sql` is checked in (protects active code references on archive/delete); remote application was verified.
+- `supabase/migrations/20261002143305_index_exam_foreign_keys_and_restrict_issue_rpc.sql` is checked in (adds FK indexes and explicit function grants); remote application was verified. The prior `20261002143000_...` filename was incorrect.
+- `supabase/migrations/20261002144846_secure_imported_exam_submissions.sql` and `supabase/migrations/20261002145514_secure_imported_exam_answer_grading.sql` are checked in; remote application was verified.
 - Create `tests/exam-schema-contract.test.js`.
 - Modify `supabase/functions/validate-exam-code/index.ts` in the dependent code integration task after schema contract is set.
 
 **Contract:** Add `public.exams`; nullable exam references/title/question snapshot columns; teacher-only RLS for roster mutations and exam management; service-only linked-code validation returning `{ valid, legacy, examId, examTitle, banks }`; authenticated teacher RPC `issue_exam_access_code(exam_id, code, expires_at)` which atomically deactivates existing active codes and inserts one linked code. Preserve existing SQL signature behavior only where compatibility needs it; new return structure is used by the Edge Function.
 
-- [x] Align contract tests with migrations checked into this checkout; the original admin/exam/roster schema migration is absent and cannot be asserted here.
+- [x] Align contract tests with migrations checked into this checkout; the recovered original admin/exam/roster schema migration is now present.
 - [x] Run `node --test tests/exam-schema-contract.test.js`; contract checks now target migrations present in this checkout.
 - [ ] Write the forward-only migration, using `DROP FUNCTION`/recreate only where return type changes and reapplying explicit execute grants after recreation.
 - [ ] Run the migration contract test and inspect SQL for idempotent policy/index names, least privileges, foreign-key behavior, and no destructive data rewrite.
