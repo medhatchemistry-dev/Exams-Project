@@ -25,7 +25,7 @@ values ('<auth-user-uuid>');
 
 Public signup does not grant a role. Never put a service-role key in frontend environment variables.
 
-## Checks and deployment
+## Checks and deployment.
 
 ```bash
 npm run lint
