@@ -28,7 +28,7 @@ test('re-sanitizes a stored imported bank and removes answer keys before student
     legacy: false,
     banks: { '10-متقدم': [{ qAr: '<img src="x" onerror="alert(1)">سؤال', options: [{ ar: 'أ' }, { ar: 'ب' }], answer: 0 }] },
   };
-  const selected = selectExamBank(dirtyValidation, '10', 'متقدم', {}, { exposeAnswers: false });
+  const selected = selectExamBank(dirtyValidation, '10', 'متقدم', {});
   assert.doesNotMatch(selected.questions[0].qAr, /onerror/i);
   assert.match(selected.questions[0].qAr, /سؤال/);
   assert.equal(Object.hasOwn(selected.questions[0], 'answer'), false);
@@ -41,17 +41,18 @@ test('accepts imported exam payload with no bundled bank loaded and withholds ke
     examId: 15,
     examTitle: 'امتحان تجريبي',
     banks: { '10-متقدم': [{ id: 'I1', qAr: 'مستورد', options: [{ ar: 'أ' }, { ar: 'ب' }], answer: 1 }] },
-  }, '10', 'متقدم', {}, { exposeAnswers: false });
+  }, '10', 'متقدم', {});
   assert.equal(imported.examId, 15);
   assert.equal(imported.examTitle, 'امتحان تجريبي');
   assert.equal(imported.questions.length, 1);
   assert.equal(Object.hasOwn(imported.questions[0], 'answer'), false);
 });
 
-test('uses bundled question banks for legacy unlinked codes', () => {
+test('uses supplied key-free question banks for legacy unlinked codes', () => {
   const legacy = selectExamBank({ legacy: true }, '12', 'متقدم', banks);
   assert.equal(legacy.bankKey, '12-متقدم');
   assert.equal(legacy.questions[0].id, 'LEGACY');
+  assert.equal(Object.hasOwn(legacy.questions[0], 'answer'), false);
 });
 
 test('shuffles repeatably per student and exam while preserving answer mapping', () => {

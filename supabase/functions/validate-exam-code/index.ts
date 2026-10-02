@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders, isAllowedOrigin, parseConfiguredOrigins } from '../_shared/cors.js';
+import { buildLegacySubmission, LegacySubmissionError, toPublicQuestionBanks } from '../_shared/legacyExamSubmission.js';
 
 Deno.serve(async (request) => {
   const origin = request.headers.get('origin');
@@ -31,9 +32,54 @@ Deno.serve(async (request) => {
 
     const { data: resolution, error: validationError } = await admin.rpc('resolve_exam_access_code', { candidate: code });
     if (validationError) throw validationError;
+    if (!resolution?.valid) {
+      const { data: allowed, error: rateLimitError } = await admin.rpc('consume_access_attempt', { client_hash: ipHash, attempt_purpose: 'exam_code' });
+      if (rateLimitError) throw rateLimitError;
+      if (!allowed) return Response.json({ error: 'Too many attempts' }, { status: 429, headers });
+      if (body?.action === 'submit') return Response.json({ error: 'Exam access code is inactive or expired' }, { status: 409, headers });
+    }
+    if (body?.action === 'check') return Response.json(resolution ?? { valid: false }, { headers });
     if (body?.action === 'submit') {
-      if (!resolution?.valid) return Response.json({ error: 'Exam access code is inactive or expired' }, { status: 409, headers });
-      if (resolution.legacy) return Response.json({ error: 'Legacy exam uses the standard result flow' }, { status: 409, headers });
+      if (resolution.legacy) {
+        const { data: bankRecord, error: bankError } = await admin
+          .from('legacy_exam_question_banks')
+          .select('banks')
+          .eq('id', true)
+          .single();
+        if (bankError) throw bankError;
+
+        let submission;
+        try {
+          submission = buildLegacySubmission({
+            banks: bankRecord.banks,
+            student: body.student,
+            answers: body.answers,
+            questions: body.questions,
+            submissionTime: body.submissionTime,
+            isAuto: Boolean(body.isAuto),
+          });
+        } catch (submissionError) {
+          if (submissionError instanceof LegacySubmissionError) {
+            return Response.json({ error: submissionError.message }, { status: 400, headers });
+          }
+          throw submissionError;
+        }
+
+        const { data: savedResult, error: saveError } = await admin
+          .from('exam_results')
+          .insert(submission.result)
+          .select('id')
+          .single();
+        if (saveError) throw saveError;
+
+        return Response.json({
+          submitted: true,
+          resultId: savedResult.id,
+          score: submission.score,
+          total: submission.total,
+          examTitle: 'الاختبار الحالي',
+        }, { headers });
+      }
       const { data: submitted, error: submitError } = await admin.rpc('submit_exam_attempt', {
         candidate_code: code,
         student_name_input: body.student?.name,
@@ -62,10 +108,15 @@ Deno.serve(async (request) => {
         questions: result?.questions_json,
       }, { headers });
     }
-    if (!resolution?.valid) {
-      const { data: allowed, error: rateLimitError } = await admin.rpc('consume_access_attempt', { client_hash: ipHash, attempt_purpose: 'exam_code' });
-      if (rateLimitError) throw rateLimitError;
-      if (!allowed) return Response.json({ error: 'Too many attempts' }, { status: 429, headers });
+    if (resolution?.valid && resolution.legacy === true) {
+      const { data: bankRecord, error: bankError } = await admin
+        .from('legacy_exam_question_banks')
+        .select('banks')
+        .eq('id', true)
+        .single();
+      if (bankError) throw bankError;
+      const publicBanks = toPublicQuestionBanks(bankRecord.banks);
+      return Response.json({ ...resolution, banks: publicBanks }, { headers });
     }
     if (resolution?.valid && resolution.legacy === false && resolution.banks && typeof resolution.banks === 'object') {
       const publicBanks = Object.fromEntries(Object.entries(resolution.banks).map(([key, questions]) => [

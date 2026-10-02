@@ -47,9 +47,10 @@ test('server grading resolves canonical questions by id and aligns answers with 
   assert.match(gradingMigration, /jsonb_array_length\(presented_questions_input\) <> jsonb_array_length\(source_bank\)/i);
 });
 
-test('imported exams withhold answer keys and use server-graded submission', () => {
-  assert.match(quizApp, /exposeAnswers: Boolean\(validatedExam\?\.legacy\)/);
+test('all student exams withhold answer keys and submit through the trusted endpoint', () => {
+  assert.match(quizApp, /selectExamBank\(validatedExam, info\.grade, info\.track, banks \|\| \{\}\)/);
   assert.match(quizApp, /action: 'submit'/);
   assert.match(quizApp, /isAuto: auto/);
-  assert.match(quizApp, /if \(validatedExam\?\.legacy\) \{[\s\S]*?from\('exam_results'\)\.insert/);
+  assert.doesNotMatch(quizApp, /from\('exam_results'\)\.insert/);
+  assert.doesNotMatch(quizApp, /question\.answer/);
 });

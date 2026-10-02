@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { supabase, hasTeacherRole } from '@/api/supabaseClient';
-import { loadQuestionBanks } from '@/lib/quizBanks';
 import { buildExam, selectExamBank } from '@/lib/examExecution';
 import LoginScreen from '@/components/quiz/LoginScreen';
 import QuizScreen from '@/components/quiz/QuizScreen';
@@ -105,14 +104,12 @@ export default function QuizApp() {
     if (error) throw error;
     if (data?.valid) {
       if (data.legacy) {
-        try {
-          setBanks(await loadQuestionBanks());
-          setBanksError(false);
-        } catch (bankError) {
-          console.error('Legacy question bank load failed:', bankError);
+        if (!data.banks || typeof data.banks !== 'object') {
           setBanksError(true);
           throw new Error('تعذر تحميل بنك الأسئلة الحالي.');
         }
+        setBanks(data.banks);
+        setBanksError(false);
       } else {
         setBanks(null);
         setBanksError(false);
@@ -127,9 +124,8 @@ export default function QuizApp() {
   const isExamCodeActive = useCallback(async () => {
     if (!accessCode) return false;
     try {
-      const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { code: accessCode } });
+      const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { action: 'check', code: accessCode } });
       if (error) throw error;
-      if (data?.valid) setValidatedExam(data);
       return Boolean(data?.valid);
     } catch (error) {
       console.error('Active exam code check failed:', error);
@@ -204,7 +200,7 @@ export default function QuizApp() {
       }
       let selectedBank;
       try {
-        selectedBank = selectExamBank(validatedExam, info.grade, info.track, banks || {}, { exposeAnswers: Boolean(validatedExam?.legacy) });
+        selectedBank = selectExamBank(validatedExam, info.grade, info.track, banks || {});
       } catch (error) {
         showAlert('الصف غير متاح في هذا الاختبار', error.message);
         return;
@@ -288,59 +284,30 @@ export default function QuizApp() {
       let finalQuestions = questions;
 
       if (student) {
-        if (validatedExam?.legacy) {
-          if (!auto) {
-            questions.forEach((question, index) => {
-              if (answers[index] !== undefined && Number.parseInt(answers[index], 10) === question.answer) score++;
-            });
-          }
-          const { error } = await supabase.from('exam_results').insert({
-            student_name: student.name,
-            student_number: student.id,
-            grade: student.grade,
-            track: student.track,
-            section: student.section,
-            score,
-            total,
-            answers_json: answers,
-            exam_id: null,
-            exam_title_snapshot: 'الاختبار الحالي',
-            questions_json: questions,
-            submission_time: submissionTime,
-            is_other: !!student.isOther,
-          });
-          if (error) {
-            console.error('Exam result save failed:', error);
-            isSubmitting.current = false;
-            showAlert('تعذر حفظ النتيجة', 'لم نتمكن من حفظ إجابتك. تحقق من اتصال الإنترنت ثم أعد الإرسال.');
-            return;
-          }
-        } else {
-          const { data, error } = await supabase.functions.invoke('validate-exam-code', {
-            body: {
-              action: 'submit',
-              code: accessCode,
-              student,
-              answers,
-              questions,
-              submissionTime,
-              isAuto: auto,
-            },
-          });
-          if (error || !data?.submitted) {
-            console.error('Imported exam submission failed:', error || data?.error);
-            isSubmitting.current = false;
-            showAlert('تعذر حفظ النتيجة', 'لم نتمكن من حفظ إجابتك. تحقق من اتصال الإنترنت ثم أعد الإرسال.');
-            return;
-          }
-          score = data.score;
-          total = data.total;
-          finalQuestions = data.questions;
+        const { data, error } = await supabase.functions.invoke('validate-exam-code', {
+          body: {
+            action: 'submit',
+            code: accessCode,
+            student,
+            answers,
+            questions,
+            submissionTime,
+            isAuto: auto,
+          },
+        });
+        if (error || !data?.submitted) {
+          console.error('Exam submission failed:', error || data?.error);
+          isSubmitting.current = false;
+          showAlert('تعذر حفظ النتيجة', 'لم نتمكن من حفظ إجابتك. تحقق من اتصال الإنترنت ثم أعد الإرسال.');
+          return;
         }
+        score = data.score;
+        total = data.total;
+        finalQuestions = data.questions || questions;
       }
 
       setQuestions(finalQuestions);
-      setResult({ score, total, submissionTime, examTitle: validatedExam?.legacy ? 'الاختبار الحالي' : validatedExam?.examTitle || 'الاختبار', certificateTemplateId: validatedExam?.certificateTemplateId || 1 });
+      setResult({ score, total, submissionTime, isLegacy: Boolean(validatedExam?.legacy), examTitle: validatedExam?.legacy ? 'الاختبار الحالي' : validatedExam?.examTitle || 'الاختبار', certificateTemplateId: validatedExam?.certificateTemplateId || 1 });
       setScreen('result');
       window.scrollTo({ top: 0 });
     },
@@ -413,6 +380,7 @@ export default function QuizApp() {
           submissionTime={result.submissionTime}
           questions={questions}
           answers={answers}
+          isLegacy={result.isLegacy}
           onPrint={() => window.print()}
           onRestart={restart}
         />

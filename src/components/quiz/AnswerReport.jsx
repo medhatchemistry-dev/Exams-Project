@@ -6,7 +6,7 @@ const MARKERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 // Full correction report — rendered off-screen and captured into the downloadable PDF.
 // Shows the student's own answer on every question, marks it correct/wrong,
 // and highlights the correct answer whenever the student answered wrong or left it blank.
-export default function AnswerReport({ innerRef, student, score, total, submissionTime, questions, answers }) {
+export default function AnswerReport({ innerRef, student, score, total, submissionTime, questions, answers, showAnswerKey = true }) {
   const percentage = total ? (score / total) * 100 : 0;
   let correct = 0;
   let wrong = 0;
@@ -38,24 +38,28 @@ export default function AnswerReport({ innerRef, student, score, total, submissi
     >
       {/* header */}
       <div style={{ borderBottom: '3px solid #dc2626', paddingBottom: 14, marginBottom: 20 }}>
-        <div style={{ fontSize: 22, fontWeight: 900 }}>منصة لغة الكيمياء — تقرير التصحيح التفصيلي</div>
+        <div style={{ fontSize: 22, fontWeight: 900 }}>منصة لغة الكيمياء — {showAnswerKey ? 'تقرير التصحيح التفصيلي' : 'تقرير إجابات الطالب'}</div>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginTop: 6 }}>
           {student.name} • {student.grade} ({student.track}) • شعبة {student.section} • رقم الطالب: {student.id}
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginTop: 2 }}>
           الدرجة: {score} من {total} ({percentage.toFixed(1)}%) • وقت التسليم: {submissionTime}
         </div>
-        <div style={{ fontSize: 13, fontWeight: 800, marginTop: 8 }}>
-          إجابات صحيحة: <span style={{ color: '#059669' }}>{correct}</span>
-          {' — '}خاطئة: <span style={{ color: '#dc2626' }}>{wrong}</span>
-          {' — '}لم تُجب: <span style={{ color: '#d97706' }}>{blank}</span>
-        </div>
+        {showAnswerKey ? (
+          <div style={{ fontSize: 13, fontWeight: 800, marginTop: 8 }}>
+            إجابات صحيحة: <span style={{ color: '#059669' }}>{correct}</span>
+            {' — '}خاطئة: <span style={{ color: '#dc2626' }}>{wrong}</span>
+            {' — '}لم تُجب: <span style={{ color: '#d97706' }}>{blank}</span>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, fontWeight: 800, marginTop: 8 }}>تم احتساب الدرجة عبر الخادم. هذا التقرير لا يعرض مفاتيح الإجابة.</div>
+        )}
       </div>
 
       {questions.map((q, i) => {
         const studentAns = answers[i];
-        const isCorrect = studentAns !== undefined && parseInt(studentAns, 10) === q.answer;
-        const isWrong = studentAns !== undefined && !isCorrect;
+        const isCorrect = showAnswerKey && studentAns !== undefined && parseInt(studentAns, 10) === q.answer;
+        const isWrong = showAnswerKey && studentAns !== undefined && !isCorrect;
         return (
           <div
             key={i}
@@ -72,7 +76,7 @@ export default function AnswerReport({ innerRef, student, score, total, submissi
                   إجابتك: ({MARKERS[studentAns] || studentAns + 1})
                 </span>
               )}
-              {!isCorrect && (
+              {showAnswerKey && !isCorrect && (
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#059669' }}>
                   الإجابة الصحيحة: ({MARKERS[q.answer]})
                 </span>
@@ -95,10 +99,10 @@ export default function AnswerReport({ innerRef, student, score, total, submissi
 
             <div style={{ marginTop: 10 }}>
               {q.options.map((opt, oi) => {
-                const isCorrectOpt = oi === q.answer;
+                const isCorrectOpt = showAnswerKey && oi === q.answer;
                 const isStudentOpt = studentAns === oi;
-                const bg = isCorrectOpt ? '#ecfdf5' : isStudentOpt ? '#fef2f2' : '#ffffff';
-                const bc = isCorrectOpt ? '#059669' : isStudentOpt ? '#dc2626' : '#e2e8f0';
+                const bg = isCorrectOpt ? '#ecfdf5' : showAnswerKey && isStudentOpt ? '#fef2f2' : isStudentOpt ? '#eff6ff' : '#ffffff';
+                const bc = isCorrectOpt ? '#059669' : showAnswerKey && isStudentOpt ? '#dc2626' : isStudentOpt ? '#2563eb' : '#e2e8f0';
                 return (
                   <div
                     key={oi}
@@ -142,7 +146,7 @@ export default function AnswerReport({ innerRef, student, score, total, submissi
                         إجابتك
                       </span>
                     )}
-                    {isCorrectOpt && (
+                    {showAnswerKey && isCorrectOpt && (
                       <span style={{ fontSize: 11, fontWeight: 900, color: '#059669', whiteSpace: 'nowrap' }}>الصحيحة ✓</span>
                     )}
                   </div>

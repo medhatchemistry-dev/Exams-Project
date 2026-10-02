@@ -14,7 +14,7 @@ function skillRow(icon, label, status, color) {
   );
 }
 
-export default function ResultScreen({ student, examTitle, certificateTemplateId = 1, score, total, submissionTime, questions, answers, onPrint, onRestart }) {
+export default function ResultScreen({ student, examTitle, certificateTemplateId = 1, score, total, submissionTime, questions, answers, isLegacy = false, onPrint, onRestart }) {
   const percentage = total ? (score / total) * 100 : 0;
   const grade = percentage >= 90 ? 'ممتاز' : percentage >= 75 ? 'جيد جداً' : percentage >= 60 ? 'جيد' : percentage >= 50 ? 'مقبول' : 'يحتاج تعزيزاً';
   const gradeColor = percentage >= 75 ? 'var(--mol-green)' : percentage >= 50 ? 'var(--mol-amber)' : 'var(--mol-red)';
@@ -104,7 +104,7 @@ export default function ResultScreen({ student, examTitle, certificateTemplateId
             disabled={generating}
           >
             {generating ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-            تحميل PDF — الحل والتصحيح
+            {isLegacy ? 'تحميل PDF — إجابات الطالب' : 'تحميل PDF — الحل والتصحيح'}
           </button>
           <button className="mol-btn mol-btn-ghost px-6 py-3 inline-flex items-center gap-2" onClick={onPrint}>
             <Printer size={18} /> طباعة التقرير
@@ -134,6 +134,7 @@ export default function ResultScreen({ student, examTitle, certificateTemplateId
           submissionTime={submissionTime}
           questions={questions}
           answers={answers}
+          showAnswerKey={!isLegacy}
         />
       </div>
     </div>

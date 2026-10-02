@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
+import { parse } from 'acorn';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
 globalThis.DOMParser = dom.window.DOMParser;
@@ -89,9 +90,22 @@ test('rejects files over five mebibytes', () => {
   assert.throws(() => parseExamHtml(' '.repeat(5 * 1024 * 1024 + 1), 'large.html'), /5 MiB|size/i);
 });
 
-test('parses the bundled HTML question bank without executing it', () => {
+test('public legacy question bank contains questions but no answer keys', () => {
   const bundled = readFileSync(new URL('../public/question-bank.html', import.meta.url), 'utf8');
-  const parsed = parseExamHtml(bundled, 'question-bank.html');
-  assert.equal(parsed.bankSummaries.length, 5);
-  assert.equal(parsed.bankSummaries.reduce((total, bank) => total + bank.questionCount, 0), 125);
+  const script = [...bundled.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)]
+    .map((match) => match[1])
+    .find((source) => /questionBanksByGrade\s*=/.test(source));
+  assert.ok(script);
+  const program = parse(script, { ecmaVersion: 'latest' });
+  const declaration = program.body
+    .filter((statement) => statement.type === 'VariableDeclaration')
+    .flatMap((statement) => statement.declarations)
+    .find((item) => item.id?.name === 'questionBanksByGrade');
+  assert.ok(declaration?.init?.type === 'ObjectExpression');
+  assert.equal(declaration.init.properties.length, 5);
+  const questions = declaration.init.properties.flatMap((bank) => bank.value.elements);
+  assert.equal(questions.length, 125);
+  for (const question of questions) {
+    assert.ok(!question.properties.some((property) => property.key?.name === 'answer'));
+  }
 });
