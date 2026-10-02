@@ -4,19 +4,13 @@ import { FlaskConical, Phone, ShieldCheck, Settings } from 'lucide-react';
 import MathText from './MathText';
 import StudentPicker from './StudentPicker';
 
-export default function LoginScreen({ heroUrl, onStart }) {
+export default function LoginScreen({ onStart }) {
   return (
     <div className="mol-wrap max-w-5xl mx-auto px-4 py-10 md:py-16">
       {/* Hero */}
       <header className="mol-card overflow-hidden mb-8 mol-fade-up">
         <div className="relative h-44 md:h-64">
-          <img
-            src={heroUrl}
-            alt="شبكة جزيئية بلورية"
-            className="absolute inset-0 w-full h-full object-cover opacity-30"
-            style={{ filter: 'saturate(1.1) contrast(1.05)' }}
-          />
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(245,248,252,0.45), rgba(245,248,252,0.92))' }} />
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(37,99,235,0.12), transparent 65%), linear-gradient(180deg, rgba(245,248,252,0.45), rgba(245,248,252,0.92))' }} />
           <Link
             to="/admin"
             className="mol-chip absolute top-4 left-4 z-10 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-extrabold"

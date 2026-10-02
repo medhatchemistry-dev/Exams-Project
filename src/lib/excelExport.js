@@ -84,7 +84,7 @@ export function exportSingleResultCsv(result) {
 
 function safeParse(str, fallback) {
   try {
-    return JSON.parse(str || '') || fallback;
+    return (typeof str === 'string' ? JSON.parse(str || '') : str) || fallback;
   } catch (e) {
     return fallback;
   }

@@ -39,6 +39,13 @@ base44/.app.jsonc
 # Local agent configuration may contain API credentials; never commit it.
 opencode.json
 /.agents/
+/.vercel/
 
 # Export/archive copies are not part of the app source.
 b9aa24e00_source-code.zip
+
+# Base44 exports can contain student records and account data.
+/backups/
+
+# Supabase local project metadata may include credentials.
+/.supabase/

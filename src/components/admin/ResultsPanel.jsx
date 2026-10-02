@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { Loader2, Eye, Download } from 'lucide-react';
 import { STRUCTURE, GRADE_LABELS } from '@/lib/academicStructure';
 import { exportResultsCsv } from '@/lib/excelExport';
@@ -12,19 +12,32 @@ export default function ResultsPanel() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   const tracks = grade ? Object.keys(STRUCTURE[grade]) : [];
   const sections = grade && track ? STRUCTURE[grade][track] || [] : [];
 
-  useEffect(() => {
-    const query = {};
-    if (grade) query.grade = grade;
-    if (track) query.track = track;
-    if (section) query.section = section;
+  const loadResults = async () => {
     setLoading(true);
-    base44.entities.ExamResult.filter(query, { sort: '-created_date', limit: 200 })
-      .then((page) => setResults(page.items || []))
-      .finally(() => setLoading(false));
+    setLoadError('');
+    try {
+      let request = supabase.from('exam_results').select('*').order('created_at', { ascending: false }).limit(200);
+      if (grade) request = request.eq('grade', grade);
+      if (track) request = request.eq('track', track);
+      if (section) request = request.eq('section', section);
+      const { data, error } = await request;
+      if (error) throw error;
+      setResults(data || []);
+    } catch (error) {
+      console.error('Exam results load failed:', error);
+      setLoadError('تعذر تحميل النتائج. تحقق من اتصالك وصلاحية حساب المعلم.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadResults();
   }, [grade, track, section]);
 
   return (
@@ -51,7 +64,12 @@ export default function ResultsPanel() {
         </button>
       </div>
 
-      {loading ? (
+      {loadError ? (
+        <div className="mol-card p-6 text-center font-bold" style={{ color: 'var(--mol-red)' }}>
+          {loadError}
+          <button type="button" className="mol-btn mol-btn-ghost ml-3 px-3 py-1" onClick={loadResults}>إعادة المحاولة</button>
+        </div>
+      ) : loading ? (
         <div className="flex items-center gap-2 font-bold p-6" style={{ color: 'var(--mol-muted)' }}>
           <Loader2 className="animate-spin" size={18} /> جاري التحميل…
         </div>

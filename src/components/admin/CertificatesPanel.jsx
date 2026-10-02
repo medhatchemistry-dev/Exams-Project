@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { Loader2, Award, Download, X } from 'lucide-react';
 import Certificate from '@/components/quiz/Certificate';
 
@@ -7,17 +7,45 @@ export default function CertificatesPanel() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [loadError, setLoadError] = useState('');
+
+  const loadCertificates = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const { data, error } = await supabase
+        .from('exam_results')
+        .select('*')
+        .eq('is_perfect', true)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      setResults(data || []);
+    } catch (error) {
+      console.error('Perfect results load failed:', error);
+      setLoadError('تعذر تحميل الشهادات. تحقق من اتصالك وصلاحية حساب المعلم.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    base44.entities.ExamResult.filter({ is_perfect: true }, { sort: '-created_date', limit: 200 })
-      .then((page) => setResults(page.items || []))
-      .finally(() => setLoading(false));
+    loadCertificates();
   }, []);
 
   if (loading) {
     return (
       <div className="flex items-center gap-2 font-bold p-6" style={{ color: 'var(--mol-muted)' }}>
         <Loader2 className="animate-spin" size={18} /> جاري التحميل…
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="mol-card p-6 text-center font-bold" style={{ color: 'var(--mol-red)' }}>
+        {loadError}
+        <button type="button" className="mol-btn mol-btn-ghost ml-3 px-3 py-1" onClick={loadCertificates}>إعادة المحاولة</button>
       </div>
     );
   }

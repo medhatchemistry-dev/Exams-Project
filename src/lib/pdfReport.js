@@ -42,7 +42,7 @@ export async function downloadPaginatedPdf(el, filename) {
 // Single-page capture scaled to fit the page — used for the certificate.
 export async function downloadSinglePagePdf(el, filename, orientation = 'portrait') {
   const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-  const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+  const pdf = new jsPDF({ orientation: orientation === 'landscape' ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const ratio = Math.min(pageW / (canvas.width / 2), pageH / (canvas.height / 2));

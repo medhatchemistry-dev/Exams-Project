@@ -1,11 +1,9 @@
-// Loads the chemistry question banks from the original assessment HTML
-// (permanent public file on Base44 media) and caches the parsed object in sessionStorage.
+// Loads chemistry questions from a bundled static asset and caches them in sessionStorage.
 // Blocked external image hosts (e.g. postimg.cc) are swapped for embedded
 // data URIs shipped inside the app bundle, so images always render.
 import imageMap from './quizImages.json';
 
-const BANKS_URL =
-  'https://media.base44.com/files/public/user_6aafb485bce75c5f36e8c6dc/038a70744_chemistry_quiz_fixed.html';
+const BANKS_URL = '/question-bank.html';
 const CACHE_KEY = 'chemistry_quiz_banks_v2';
 
 function rewriteMedia(banks) {

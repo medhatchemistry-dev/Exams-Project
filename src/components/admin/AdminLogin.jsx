@@ -1,20 +1,25 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, ArrowRight } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
 
-const ADMIN_PASSWORD = 'Medhat@2027';
-
-export default function AdminLogin({ onLogin }) {
+export default function AdminLogin() {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
-      setError('');
-      onLogin();
-    } else {
-      setError('كلمة المرور غير صحيحة');
+    setError('');
+    setLoading(true);
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+    } catch (err) {
+      setError(err.message || 'تعذر تسجيل الدخول');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -26,19 +31,23 @@ export default function AdminLogin({ onLogin }) {
         </div>
         <h2 className="text-xl font-extrabold mb-1">تسجيل دخول المعلم</h2>
         <p className="text-sm font-bold mb-6" style={{ color: 'var(--mol-muted)' }}>
-          الوصول إلى لوحة التحكم الخاصة بالمعلم
+          سجّل الدخول بحساب المعلم المصرّح به
         </p>
         <form onSubmit={submit} className="space-y-4">
-          <input
-            type="password"
-            className="mol-input text-center"
-            placeholder="كلمة المرور"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <div className="space-y-2 text-left">
+            <label htmlFor="teacher-email" className="text-sm font-medium">البريد الإلكتروني</label>
+            <input id="teacher-email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required className="mol-input" />
+          </div>
+          <div className="space-y-2 text-left">
+            <label htmlFor="teacher-password" className="text-sm font-medium">كلمة المرور</label>
+            <input id="teacher-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required className="mol-input" />
+          </div>
           {error && <p className="text-sm font-bold" style={{ color: 'var(--mol-red)' }}>{error}</p>}
-          <button type="submit" className="mol-btn mol-btn-primary w-full py-3">دخول</button>
+          <button type="submit" disabled={loading} className="mol-btn mol-btn-primary w-full py-3">
+            {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> جاري تسجيل الدخول…</> : 'دخول'}
+          </button>
         </form>
+        <Link to="/forgot-password" className="inline-block mt-4 text-sm font-bold text-primary hover:underline">نسيت كلمة المرور؟</Link>
         <Link to="/" className="inline-flex items-center gap-1.5 mt-6 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>
           <ArrowRight size={14} /> رجوع لصفحة الطالب
         </Link>

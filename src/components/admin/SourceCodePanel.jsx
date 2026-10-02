@@ -1,7 +1,5 @@
 import React from 'react';
-import { Code2, FileArchive } from 'lucide-react';
-
-const DOWNLOAD_URL = 'https://base44.app/api/apps/6abdf2686e18f16c1371ba52/files/mp/public/6abdf2686e18f16c1371ba52/460f6f356_source-codetar.gz';
+import { Code2 } from 'lucide-react';
 
 export default function SourceCodePanel() {
   return (
@@ -11,16 +9,9 @@ export default function SourceCodePanel() {
           <Code2 size={28} style={{ color: 'var(--mol-cobalt)' }} />
         </div>
         <h2 className="text-lg font-extrabold mb-1">الكود المصدري للتطبيق</h2>
-        <p className="text-sm font-bold mb-5" style={{ color: 'var(--mol-muted)' }}>
-          يحتوي على كامل الكود الأمامي (Frontend) والخلفي (Backend) للملفات الأساسية
+        <p className="text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>
+          تتم إدارة ملفات المشروع من مستودع GitHub الخاص بالتطبيق.
         </p>
-        <a
-          href={DOWNLOAD_URL}
-          download="source-code.tar.gz"
-          className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-6 py-3"
-        >
-          <FileArchive size={18} /> تحميل الكود المصدري (TAR.GZ)
-        </a>
       </div>
     </div>
   );

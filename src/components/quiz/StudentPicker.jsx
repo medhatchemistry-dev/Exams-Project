@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { Loader2 } from 'lucide-react';
 import { STRUCTURE, GRADE_LABELS } from '@/lib/academicStructure';
 import OtherStudentForm from './OtherStudentForm';
@@ -10,6 +10,7 @@ export default function StudentPicker({ onStart }) {
   const [section, setSection] = useState('');
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [showOther, setShowOther] = useState(false);
 
@@ -23,15 +24,36 @@ export default function StudentPicker({ onStart }) {
   useEffect(() => {
     if (!ready) { setStudents([]); return; }
     setLoading(true);
+    setLoadError('');
     setSelectedId('');
     setShowOther(false);
-    base44.entities.Student.filter({ grade, track, section }, { sort: 'full_name', limit: 200 })
-      .then((page) => setStudents(page.items || []))
-      .finally(() => setLoading(false));
+    let active = true;
+    const loadStudents = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('students')
+          .select('id, full_name, student_number, grade, track, section')
+          .eq('grade', grade)
+          .eq('track', track)
+          .eq('section', section)
+          .order('full_name')
+          .limit(500);
+        if (error) throw error;
+        if (active) setStudents(data || []);
+      } catch (error) {
+        if (!active) return;
+        console.error('Student roster load failed:', error);
+        setLoadError('تعذر تحميل قائمة الطلاب. يمكنك إدخال بياناتك يدوياً.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadStudents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { active = false; };
   }, [grade, track, section]);
 
-  const selected = students.find((s) => s.id === selectedId);
+  const selected = students.find((s) => s.student_number === selectedId);
 
   const confirmSelected = () => {
     if (!selected) return;
@@ -71,10 +93,12 @@ export default function StudentPicker({ onStart }) {
             <div className="flex items-center gap-2 font-bold py-2" style={{ color: 'var(--mol-muted)' }}>
               <Loader2 className="animate-spin" size={18} /> جاري التحميل…
             </div>
+          ) : loadError ? (
+            <div className="font-bold py-2" style={{ color: 'var(--mol-red)' }}>{loadError}</div>
           ) : (
             <select className="mol-input" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
               <option value="">— اختر اسمك — ({students.length} طالب)</option>
-              {students.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+              {students.map((s) => <option key={s.id} value={s.student_number}>{s.full_name}</option>)}
             </select>
           )}
           <div className="flex flex-wrap gap-3 mt-4">

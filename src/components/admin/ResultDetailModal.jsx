@@ -11,7 +11,12 @@ export default function ResultDetailModal({ result, onClose }) {
   const ref = useRef(null);
   const [generating, setGenerating] = useState(false);
   const [questions, setQuestions] = useState(null);
-  const answers = JSON.parse(result.answers_json || '{}');
+  let answers = result.answers_json || {};
+  try {
+    if (typeof answers === 'string') answers = JSON.parse(answers || '{}');
+  } catch {
+    answers = {};
+  }
 
   useEffect(() => {
     let alive = true;

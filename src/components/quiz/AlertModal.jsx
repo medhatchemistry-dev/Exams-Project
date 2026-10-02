@@ -40,15 +40,9 @@ export function AlertModal({ open, title, message, onClose, confirmLabel, onConf
   );
 }
 
-// Teacher override code modal (shown when a student id already has an attempt).
+// Teacher override prompt (shown when a student id already has an attempt).
 export function TeacherCodeModal({ open, onClose, onSubmit }) {
-  const inputRef = React.useRef(null);
-  React.useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 50);
-  }, [open]);
   if (!open) return null;
-
-  const submit = () => onSubmit(inputRef.current?.value || '');
 
   return (
     <div
@@ -64,18 +58,11 @@ export function TeacherCodeModal({ open, onClose, onSubmit }) {
           محاولة سابقة مسجلة
         </h3>
         <p className="font-bold text-sm leading-relaxed mb-4" style={{ color: 'var(--mol-muted)' }}>
-          لقد استنفدت محاولتك المسموحة برقم الطالب. أدخل كود المعلم للسماح بمحاولة جديدة:
+          لقد استنفدت محاولتك المسموحة. يمكن للمعلم المسجّل دخوله والمصرّح به السماح بمحاولة إضافية.
         </p>
-        <input
-          ref={inputRef}
-          type="password"
-          placeholder="ادخل كود المعلم"
-          className="mol-input text-center tracking-widest"
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-        />
         <div className="flex gap-3 justify-center mt-5">
-          <button className="mol-btn mol-btn-primary px-6 py-2.5" onClick={submit}>
-            تحقق ودخول
+          <button className="mol-btn mol-btn-primary px-6 py-2.5" onClick={onSubmit}>
+            تحقق من حساب المعلم
           </button>
           <button className="mol-btn mol-btn-ghost px-6 py-2.5" onClick={onClose}>
             إلغاء

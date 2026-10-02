@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { supabase, hasTeacherRole } from '@/api/supabaseClient';
 import { loadQuestionBanks, buildExam } from '@/lib/quizBanks';
 import LoginScreen from '@/components/quiz/LoginScreen';
 import QuizScreen from '@/components/quiz/QuizScreen';
@@ -8,10 +8,16 @@ import ResultScreen from '@/components/quiz/ResultScreen';
 import SecurityOverlay from '@/components/quiz/SecurityOverlay';
 import { AlertModal, TeacherCodeModal } from '@/components/quiz/AlertModal';
 
-const HERO_URL = 'https://media.base44.com/images/public/6abb52435e4800b8582e545c/59917e705_generated_31e52d8c.jpg';
-const SHEETDB_URL = 'https://sheetdb.io/api/v1/1udcjvrvkr4sh';
 const ATTEMPTS_KEY = 'student_attempts';
-const TEACHER_CODE = '1984';
+
+function readAttempts() {
+  try {
+    const attempts = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '{}');
+    return attempts && typeof attempts === 'object' ? attempts : {};
+  } catch {
+    return {};
+  }
+}
 
 export default function QuizApp() {
   const [banks, setBanks] = useState(null);
@@ -22,7 +28,7 @@ export default function QuizApp() {
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
 
-  const [alert, setAlert] = useState({ open: false });
+  const [alert, setAlert] = useState({ open: false, title: '', message: '', onConfirm: undefined });
   const [teacherModal, setTeacherModal] = useState(false);
   const [security, setSecurity] = useState({ open: false, warningsLeft: 3 });
 
@@ -40,7 +46,10 @@ export default function QuizApp() {
   // alarm sound (WebAudio beep)
   const startAlarm = useCallback(() => {
     try {
-      if (!alarmCtx.current) alarmCtx.current = new (window.AudioContext || window.webkitAudioContext)();
+      if (!alarmCtx.current) {
+        const AudioContextConstructor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+        alarmCtx.current = new AudioContextConstructor();
+      }
       const ctx = alarmCtx.current;
       if (ctx.state === 'suspended') ctx.resume();
       stopAlarm();
@@ -145,7 +154,7 @@ export default function QuizApp() {
         return;
       }
       pendingStudent.current = info;
-      const attempts = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '{}');
+      const attempts = readAttempts();
       if ((attempts[info.id] || 0) >= 1) {
         setTeacherModal(true);
         return;
@@ -158,17 +167,18 @@ export default function QuizApp() {
   );
 
   const verifyTeacherCode = useCallback(
-    (code) => {
-      if (String(code).trim() === TEACHER_CODE) {
+    async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && await hasTeacherRole(user.id)) {
         setTeacherModal(false);
         const info = pendingStudent.current;
-        const attempts = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '{}');
+        const attempts = readAttempts();
         attempts[info.id] = 1;
         localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
-        showAlert('نجاح', 'تم قبول كود المعلم بنجاح. يمكنك بدء المحاولة الآن.');
+        showAlert('نجاح', 'تم السماح بمحاولة إضافية بواسطة المعلم. يمكنك بدء المحاولة الآن.');
         beginExam(info);
       } else {
-        showAlert('خطأ', 'كود المعلم غير صحيح!');
+        showAlert('يلزم تسجيل دخول المعلم', 'سجّل الدخول بحساب المعلم المصرّح به من صفحة الإدارة، ثم أعد المحاولة.');
       }
     },
     [beginExam, showAlert]
@@ -179,7 +189,7 @@ export default function QuizApp() {
   }, []);
 
   const handleSubmit = useCallback(
-    (auto = false) => {
+    async (auto = false) => {
       if (isSubmitting.current) return;
       isSubmitting.current = true;
       stopAlarm();
@@ -194,26 +204,8 @@ export default function QuizApp() {
       const total = questions.length;
       const submissionTime = new Date().toLocaleString('ar-AE');
 
-      // save to Google Sheet (best-effort, mirrors original)
       if (student) {
-        fetch(SHEETDB_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            data: {
-              name: student.name,
-              id: student.id,
-              grade: student.grade,
-              track: student.track,
-              section: student.section,
-              score,
-              time: submissionTime
-            }
-          })
-        }).catch(() => {});
-
-        // save the full detailed result for the teacher's admin panel (best-effort)
-        base44.entities.ExamResult.create({
+        const { error } = await supabase.from('exam_results').insert({
           student_name: student.name,
           student_number: student.id,
           grade: student.grade,
@@ -221,19 +213,23 @@ export default function QuizApp() {
           section: student.section,
           score,
           total,
-          percentage: total ? (score / total) * 100 : 0,
-          answers_json: JSON.stringify(answers),
+          answers_json: answers,
           submission_time: submissionTime,
-          is_other: !!student.isOther,
-          is_perfect: total > 0 && score === total
-        }).catch((e) => console.error('ExamResult save failed:', e));
+          is_other: !!student.isOther
+        });
+        if (error) {
+          console.error('Exam result save failed:', error);
+          isSubmitting.current = false;
+          showAlert('تعذر حفظ النتيجة', 'لم نتمكن من حفظ إجابتك. تحقق من اتصال الإنترنت ثم أعد الإرسال.');
+          return;
+        }
       }
 
       setResult({ score, total, submissionTime });
       setScreen('result');
       window.scrollTo({ top: 0 });
     },
-    [questions, answers, student, stopAlarm]
+    [questions, answers, student, stopAlarm, showAlert]
   );
 
   const restart = useCallback(() => {
@@ -273,7 +269,7 @@ export default function QuizApp() {
       )}
 
       {banks && screen === 'login' && (
-        <LoginScreen heroUrl={HERO_URL} onStart={handleStart} />
+        <LoginScreen onStart={handleStart} />
       )}
 
       {screen === 'quiz' && banks && (
@@ -304,7 +300,7 @@ export default function QuizApp() {
         open={alert.open}
         title={alert.title}
         message={alert.message}
-        onClose={() => setAlert({ open: false })}
+        onClose={() => setAlert({ open: false, title: '', message: '', onConfirm: undefined })}
         onConfirm={alert.onConfirm}
         confirmLabel="تأكيد التسليم"
       />

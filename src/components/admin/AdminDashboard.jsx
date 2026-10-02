@@ -3,15 +3,13 @@ import { LogOut, FileBarChart, Award, Code2 } from 'lucide-react';
 import ResultsPanel from './ResultsPanel';
 import CertificatesPanel from './CertificatesPanel';
 import SourceCodePanel from './SourceCodePanel';
-
-const ADMIN_SESSION_KEY = 'admin_session_authed';
+import { supabase } from '@/api/supabaseClient';
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState('results'); // results | certificates | source
 
-  const logout = () => {
-    sessionStorage.removeItem(ADMIN_SESSION_KEY);
-    window.location.reload();
+  const logout = async () => {
+    await supabase.auth.signOut();
   };
 
   return (
