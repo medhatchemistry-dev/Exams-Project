@@ -124,6 +124,6 @@ npm run typecheck
 npm run build
 ```
 
-## Deployment
+## Deployment.
 
 The app is a static Vite site built with `npm run build` (output directory: `dist/`). Configure the hosting project with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` for each environment, and deploy Supabase migrations and Edge Functions separately. Git pushes are handled by the hosting project's existing Git integration; confirm the configured deployment branch in its project settings.
