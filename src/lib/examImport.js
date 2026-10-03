@@ -98,7 +98,7 @@ function extractExamSource(html) {
     const sectionMap = sectionMapCandidates[0];
     if (sectionMap?.type !== 'ObjectExpression') fail('sectionQuestionsMap must be a static object literal');
     const sectionProperties = sectionMap.type === 'ObjectExpression' ? sectionMap.properties : [];
-    const questions = [];
+    const questionGroups = [];
     for (const property of sectionProperties) {
       if (property.type !== 'Property') fail('sectionQuestionsMap must map section names to static question arrays');
       const staticProperty = /** @type {import('estree').Property} */ (property);
@@ -116,13 +116,14 @@ function extractExamSource(html) {
       if (sourceArray?.type !== 'ArrayExpression') fail(`${sectionName}: section must reference a static question array`);
       const sectionQuestions = evaluateLiteral(sourceArray, arrayName);
       if (!Array.isArray(sectionQuestions)) fail(`${sectionName}: section questions must be an array`);
-      questions.push(...sectionQuestions.map((question, index) => ({
+      const namespacedQuestions = sectionQuestions.map((question, index) => ({
         ...question,
         id: `${sectionName}-${question?.id ?? index + 1}`,
-      })));
+      }));
+      questionGroups.push({ groupKey: sectionName, questions: namespacedQuestions });
     }
-    if (!questions.length) fail('sectionQuestionsMap contains no questions');
-    return { kind: 'sections', questions };
+    if (!questionGroups.some((group) => group.questions.length)) fail('sectionQuestionsMap contains no questions');
+    return { kind: 'sections', questionGroups };
   }
   if (!sawBankDeclaration) fail('HTML is missing a supported question bank or sectionQuestionsMap assignment');
   fail('HTML must contain exactly one questionBanksByGrade assignment');
@@ -236,11 +237,16 @@ export function parseExamHtml(html, filename = 'exam.html') {
   if (!/\.html?$/i.test(filename)) fail('Choose an HTML file');
   const source = extractExamSource(html);
   if (source.kind === 'banks') return validateBanks(source.banks);
-  const questions = normalizeQuestionList(source.questions, 'exam');
+  const questionGroups = source.questionGroups.map(({ groupKey, questions }) => ({
+    groupKey,
+    questions: normalizeQuestionList(questions, groupKey),
+  }));
+  const questions = normalizeQuestionList(questionGroups.flatMap((group) => group.questions), 'exam');
   if (questions.length > MAX_EXAM_QUESTIONS) fail(`exam exceeds ${MAX_EXAM_QUESTIONS} questions`);
   return {
     banks: Object.create(null),
     generalQuestions: questions,
+    questionGroups,
     bankSummaries: [{ bankKey: 'الاختبار كاملاً', questionCount: questions.length }],
   };
 }

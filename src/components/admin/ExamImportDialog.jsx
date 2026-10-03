@@ -2,18 +2,15 @@ import React, { useState } from 'react';
 import { ArrowLeft, ArrowRight, CheckCircle2, FileText, FileUp, Globe, Loader2, Timer, Upload } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { GRADE_LABELS, STRUCTURE } from '@/lib/academicStructure';
+import { ACCESS_CODE_LENGTHS, generateAccessCode } from '@/lib/examAccessCode';
 import { parseExamHtml } from '@/lib/examImport';
+import { getBalancedQuestionCounts, getQuestionGroups, MAX_EXAM_QUESTION_COUNT, selectBalancedQuestions } from '@/lib/examQuestionSelection';
 import { saveExam } from '@/lib/examRepository';
 
 const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 
 function localDateTime(date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
-
-function makeAccessCode() {
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  return Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('').slice(0, 16).toUpperCase();
 }
 
 function Progress({ step }) {
@@ -39,6 +36,8 @@ export default function ExamImportDialog({ onClose, onImported }) {
   const [section, setSection] = useState('');
   const [expiryMode, setExpiryMode] = useState('unlimited');
   const [expiresAt, setExpiresAt] = useState('');
+  const [questionCount, setQuestionCount] = useState(25);
+  const [accessCodeLength, setAccessCodeLength] = useState(8);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [savedExam, setSavedExam] = useState(null);
@@ -46,6 +45,17 @@ export default function ExamImportDialog({ onClose, onImported }) {
   const sections = grade && track ? STRUCTURE[grade]?.[track] || [] : [];
   const bankKey = grade && track ? `${grade}-${track}` : '';
   const chosenQuestions = preview?.banks?.[bankKey] || preview?.generalQuestions || [];
+  const questionGroups = getQuestionGroups(preview, bankKey);
+  const availableQuestionCount = Math.min(chosenQuestions.length, MAX_EXAM_QUESTION_COUNT);
+  const selectedQuestionCount = Math.min(questionCount, availableQuestionCount);
+  const groupQuestionCounts = getBalancedQuestionCounts(questionGroups, selectedQuestionCount);
+
+  const setInitialQuestionCount = (parsed) => {
+    const firstBank = parsed.bankSummaries[0]?.bankKey || '';
+    const firstBankQuestions = parsed.banks?.[firstBank];
+    const total = parsed.generalQuestions?.length || firstBankQuestions?.length || 0;
+    setQuestionCount(Math.min(25, total || 25));
+  };
 
   const selectInitialBank = (parsed) => {
     const firstBank = parsed.bankSummaries[0]?.bankKey || '';
@@ -79,6 +89,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
       const parsed = parseExamHtml(await nextFile.text(), nextFile.name);
       setPreview(parsed);
       selectInitialBank(parsed);
+      setInitialQuestionCount(parsed);
     } catch (parseError) {
       console.error('Exam HTML import validation failed:', parseError);
       setError(parseError.message || 'لم أستطع قراءة ملف HTML.');
@@ -107,6 +118,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
       setSourceLabel(parsedUrl.hostname);
       setTitle((current) => current || parsedUrl.hostname.replace(/^www\./, ''));
       selectInitialBank(parsed);
+      setInitialQuestionCount(parsed);
     } catch (loadError) {
       console.error('Exam URL import failed:', loadError);
       const browserBlocked = loadError instanceof TypeError || loadError.name === 'AbortError';
@@ -145,7 +157,11 @@ export default function ExamImportDialog({ onClose, onImported }) {
       setBusy(false);
     }
     const selectedQuestions = parsed?.banks?.[bankKey] || parsed?.generalQuestions || [];
-    if (!selectedQuestions.length) { setError(`لم أجد أسئلة للاختبار المحدد.`); return; }
+    if (!selectedQuestions.length) { setError('لم أجد أسئلة للاختبار المحدد.'); return; }
+    const nextQuestionCount = Math.min(questionCount, selectedQuestions.length, MAX_EXAM_QUESTION_COUNT);
+    if (nextQuestionCount < 1) { setError('اختر عدد الأسئلة التي تريد تضمينها.'); return; }
+    setQuestionCount(nextQuestionCount);
+    if (parsed !== preview) setPreview(parsed);
     setStep(2);
   };
 
@@ -158,7 +174,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
       if (!exam) {
         const { data: userData, error: authError } = await supabase.auth.getUser();
         if (authError) throw authError;
-        const selectedBanks = { [bankKey]: chosenQuestions };
+        const selectedBanks = { [bankKey]: selectBalancedQuestions(questionGroups, selectedQuestionCount) };
         exam = await saveExam({
           title: title.trim(),
           source_filename: sourceLabel || 'teacher-upload.html',
@@ -179,7 +195,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
       if (activeCode && Number(activeCode.exam_id) !== Number(exam.id)
         && !window.confirm('تفعيل هذا الاختبار سيوقف رمز الاختبار النشط الحالي. هل تريد المتابعة؟')) return;
 
-      const code = makeAccessCode();
+      const code = generateAccessCode(accessCodeLength);
       const { error: issueError } = await supabase.rpc('issue_exam_access_code', {
         target_exam_id: Number(exam.id),
         new_code: code,
@@ -242,6 +258,11 @@ export default function ExamImportDialog({ onClose, onImported }) {
             <label className="mol-label">الشعبة<select className="mol-input mt-1" value={section} disabled={!track} onChange={(event) => setSection(event.target.value)}><option value="">اختر الشعبة</option>{sections.map((value) => <option key={value} value={value}>شعبة {value}</option>)}</select></label>
           </div>
           {preview && bankKey && <div className="mol-card flex items-center justify-between gap-3 p-4"><span className="font-bold">بنك الصف والمسار المحدد</span><strong>{chosenQuestions.length} سؤال · {bankKey}</strong></div>}
+          {chosenQuestions.length > 0 && <div className="mol-card space-y-3 p-4">
+            <label className="mol-label block">عدد الأسئلة في الاختبار<input className="mol-input mt-1 max-w-40" type="number" min="1" max={availableQuestionCount} step="1" value={selectedQuestionCount || ''} disabled={Boolean(savedExam)} onChange={(event) => setQuestionCount(Math.max(1, Number(event.target.value) || 1))} /><span className="mt-1 block text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>اختر من 1 إلى {availableQuestionCount} سؤالاً من أصل {chosenQuestions.length}. عند تعدد الأقسام، يوزّعها النظام بالتساوي بينها.</span></label>
+            {questionGroups.length > 1 && <p className="text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>{questionGroups.map((group, index) => `${group.groupKey}: ${groupQuestionCounts[index] || 0}`).join(' · ')}</p>}
+          </div>}
+          <label className="mol-label block">عدد أرقام رمز الدخول<select className="mol-input mt-1 max-w-40" value={accessCodeLength} onChange={(event) => setAccessCodeLength(Number(event.target.value))}>{ACCESS_CODE_LENGTHS.map((length) => <option key={length} value={length}>{length} أرقام</option>)}</select><span className="mt-1 block text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>رمز رقمي عشوائي بطول تختاره من 5 إلى 10 أرقام.</span></label>
           <fieldset className="space-y-3 rounded-2xl border p-4" style={{ borderColor: 'var(--mol-line-strong)' }}>
             <legend className="mol-label px-1">متى ينتهي رمز دخول الطلاب؟</legend>
             <label className="flex cursor-pointer items-center gap-2 text-sm font-bold"><input type="radio" name="exam-expiry" checked={expiryMode === 'unlimited'} onChange={() => setExpiryMode('unlimited')} /> يبقى مفتوحاً حتى أوقفه</label>
@@ -251,7 +272,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
         </div>}
 
         {step === 2 && <div className="space-y-4">
-          <div className="mol-card p-5"><p className="text-xs font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>مراجعة قبل التفعيل</p><h4 className="mt-1 text-xl font-extrabold">{title}</h4><p className="mt-2 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{sourceLabel} · {GRADE_LABELS[grade]} · {track} · شعبة {section}</p><p className="mt-4 font-extrabold">{chosenQuestions.length} سؤالاً</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{expiryMode === 'timed' ? `ينتهي ${new Date(expiresAt).toLocaleString('ar')}` : 'يبقى مفتوحاً حتى توقفه يدوياً'}</p></div>
+          <div className="mol-card p-5"><p className="text-xs font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>مراجعة قبل التفعيل</p><h4 className="mt-1 text-xl font-extrabold">{title}</h4><p className="mt-2 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{sourceLabel} · {GRADE_LABELS[grade]} · {track} · شعبة {section}</p><p className="mt-4 font-extrabold">{selectedQuestionCount} سؤالاً من أصل {chosenQuestions.length}</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>رمز الدخول: {accessCodeLength} أرقام</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{expiryMode === 'timed' ? `ينتهي ${new Date(expiresAt).toLocaleString('ar')}` : 'يبقى مفتوحاً حتى توقفه يدوياً'}</p></div>
           <p className="rounded-xl p-4 text-sm font-bold" style={{ background: 'var(--mol-amber-soft, var(--mol-surface-2))', color: 'var(--mol-amber)' }}>تفعيل هذا الاختبار يوقف رمز الاختبار النشط الحالي. تستطيع إيقاف الرمز الجديد أو إنهاء الاختبار لاحقاً.</p>
           {savedExam && <p className="font-bold" style={{ color: 'var(--mol-amber)' }}>تم حفظ الاختبار بالفعل. أعد المحاولة لإصدار الرمز دون إنشاء نسخة أخرى.</p>}
         </div>}

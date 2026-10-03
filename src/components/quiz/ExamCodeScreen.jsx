@@ -52,6 +52,7 @@ export default function ExamCodeScreen({ onContinue }) {
             <input
               id="exam-code"
               className="mol-input pl-12 text-center text-lg tracking-[0.18em]"
+              inputMode="numeric"
               value={code}
               onChange={(event) => setCode(event.target.value.replace(/\s+/g, '').toUpperCase())}
               autoComplete="off"
