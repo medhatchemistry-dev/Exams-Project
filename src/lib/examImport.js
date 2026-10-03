@@ -15,7 +15,7 @@ const SAFE_STYLE_PROPERTIES = new Set([
   'text-align', 'direction', 'border', 'border-color', 'border-width', 'border-style',
   'border-collapse', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
   'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'width', 'max-width',
-  'height', 'vertical-align', 'white-space', 'text-decoration',
+  'height', 'vertical-align', 'white-space', 'text-decoration', 'overflow-x', 'border-radius',
 ]);
 const SAFE_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/]+=*$/i;
 
@@ -57,10 +57,12 @@ function evaluateLiteral(node, context) {
   }
 }
 
-function extractBanksExpression(html) {
+function extractExamSource(html) {
   const scriptBlocks = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)].map((match) => match[1]);
-  const candidates = [];
-  let sawDeclaration = false;
+  const bankCandidates = [];
+  const sectionMapCandidates = [];
+  const declarations = new Map();
+  let sawBankDeclaration = false;
   for (const script of scriptBlocks) {
     let ast;
     try {
@@ -75,19 +77,55 @@ function extractBanksExpression(html) {
     for (const statement of ast.body) {
       if (statement.type !== 'VariableDeclaration') continue;
       for (const declarator of statement.declarations) {
-        if (declarator.id?.type !== 'Identifier' || declarator.id.name !== 'questionBanksByGrade') continue;
-        sawDeclaration = true;
-        if (declarator.init?.type !== 'ObjectExpression') fail('questionBanksByGrade must be an object literal');
-        candidates.push(declarator.init);
+        if (declarator.id?.type !== 'Identifier') continue;
+        declarations.set(declarator.id.name, declarator.init);
+        if (declarator.id.name === 'questionBanksByGrade') {
+          sawBankDeclaration = true;
+          if (declarator.init?.type !== 'ObjectExpression') fail('questionBanksByGrade must be an object literal');
+          bankCandidates.push(declarator.init);
+        }
+        if (declarator.id.name === 'sectionQuestionsMap') sectionMapCandidates.push(declarator.init);
       }
     }
   }
 
-  if (candidates.length !== 1) {
-    if (!sawDeclaration) fail('HTML is missing a questionBanksByGrade assignment');
-    fail('HTML must contain exactly one questionBanksByGrade assignment');
+  if (bankCandidates.length > 0) {
+    if (bankCandidates.length !== 1) fail('HTML must contain exactly one questionBanksByGrade assignment');
+    return { kind: 'banks', banks: evaluateLiteral(bankCandidates[0], 'questionBanksByGrade') };
   }
-  return evaluateLiteral(candidates[0], 'questionBanksByGrade');
+  if (sectionMapCandidates.length > 0) {
+    if (sectionMapCandidates.length !== 1) fail('HTML must contain exactly one sectionQuestionsMap assignment');
+    const sectionMap = sectionMapCandidates[0];
+    if (sectionMap?.type !== 'ObjectExpression') fail('sectionQuestionsMap must be a static object literal');
+    const sectionProperties = sectionMap.type === 'ObjectExpression' ? sectionMap.properties : [];
+    const questions = [];
+    for (const property of sectionProperties) {
+      if (property.type !== 'Property') fail('sectionQuestionsMap must map section names to static question arrays');
+      const staticProperty = /** @type {import('estree').Property} */ (property);
+      if (staticProperty.kind !== 'init' || staticProperty.method || staticProperty.computed) {
+        fail('sectionQuestionsMap must map section names to static question arrays');
+      }
+      const sectionName = staticProperty.key.type === 'Identifier'
+        ? staticProperty.key.name
+        : staticProperty.key.type === 'Literal' && typeof staticProperty.key.value === 'string'
+          ? staticProperty.key.value
+          : fail('sectionQuestionsMap contains an invalid section name');
+      if (staticProperty.value.type !== 'Identifier') fail('sectionQuestionsMap must map section names to static question arrays');
+      const arrayName = /** @type {import('estree').Identifier} */ (staticProperty.value).name;
+      const sourceArray = declarations.get(arrayName);
+      if (sourceArray?.type !== 'ArrayExpression') fail(`${sectionName}: section must reference a static question array`);
+      const sectionQuestions = evaluateLiteral(sourceArray, arrayName);
+      if (!Array.isArray(sectionQuestions)) fail(`${sectionName}: section questions must be an array`);
+      questions.push(...sectionQuestions.map((question, index) => ({
+        ...question,
+        id: `${sectionName}-${question?.id ?? index + 1}`,
+      })));
+    }
+    if (!questions.length) fail('sectionQuestionsMap contains no questions');
+    return { kind: 'sections', questions };
+  }
+  if (!sawBankDeclaration) fail('HTML is missing a supported question bank or sectionQuestionsMap assignment');
+  fail('HTML must contain exactly one questionBanksByGrade assignment');
 }
 
 function sanitizeStyle(style, context) {
@@ -162,6 +200,14 @@ function normalizeQuestion(question, bankKey, questionIndex) {
   };
 }
 
+function normalizeQuestionList(questions, bankKey) {
+  if (!Array.isArray(questions) || !questions.length) fail(`${bankKey}: bank must contain at least one question`);
+  const normalized = questions.map((question, index) => normalizeQuestion(question, bankKey, index));
+  const ids = normalized.map((question) => question.id);
+  if (new Set(ids).size !== ids.length) fail(`${bankKey}: question IDs must be unique within a bank`);
+  return normalized;
+}
+
 function validateBanks(rawBanks) {
   if (!rawBanks || typeof rawBanks !== 'object' || Array.isArray(rawBanks)) fail('questionBanksByGrade must be an object');
   const keys = Object.keys(rawBanks);
@@ -175,9 +221,7 @@ function validateBanks(rawBanks) {
     if (!Array.isArray(questions) || !questions.length) fail(`${key}: bank must contain at least one question`);
     count += questions.length;
     if (count > MAX_EXAM_QUESTIONS) fail(`exam exceeds ${MAX_EXAM_QUESTIONS} questions`);
-    banks[key] = questions.map((question, index) => normalizeQuestion(question, key, index));
-    const ids = banks[key].map((question) => question.id);
-    if (new Set(ids).size !== ids.length) fail(`${key}: question IDs must be unique within a bank`);
+    banks[key] = normalizeQuestionList(questions, key);
   }
   return { banks, bankSummaries: keys.map((key) => ({ bankKey: key, questionCount: banks[key].length })) };
 }
@@ -190,6 +234,13 @@ export function parseExamHtml(html, filename = 'exam.html') {
   if (typeof html !== 'string') fail('HTML file content must be text');
   if (new TextEncoder().encode(html).byteLength > MAX_EXAM_FILE_BYTES) fail('HTML file exceeds 5 MiB');
   if (!/\.html?$/i.test(filename)) fail('Choose an HTML file');
-  const raw = extractBanksExpression(html);
-  return validateBanks(raw);
+  const source = extractExamSource(html);
+  if (source.kind === 'banks') return validateBanks(source.banks);
+  const questions = normalizeQuestionList(source.questions, 'exam');
+  if (questions.length > MAX_EXAM_QUESTIONS) fail(`exam exceeds ${MAX_EXAM_QUESTIONS} questions`);
+  return {
+    banks: Object.create(null),
+    generalQuestions: questions,
+    bankSummaries: [{ bankKey: 'الاختبار كاملاً', questionCount: questions.length }],
+  };
 }

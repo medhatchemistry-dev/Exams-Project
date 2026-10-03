@@ -111,6 +111,34 @@ test('public legacy question bank contains questions but no answer keys', () => 
   }
 });
 
+test('imports sectioned HTML question arrays through a static section map', () => {
+  const sectionQuestion = (id, text, answer = 0) => ({
+    id,
+    qAr: text,
+    options: [{ ar: 'أ' }, { ar: 'ب' }],
+    answer,
+  });
+  const html = `<html><script>
+    const section1Questions = ${JSON.stringify([sectionQuestion('Q1', 'الأول')])};
+    const section2Questions = ${JSON.stringify([sectionQuestion('Q1', 'الثاني', 1)])};
+    const sectionQuestionsMap = { 'القسم الأول': section1Questions, 'القسم الثاني': section2Questions };
+  </script></html>`;
+
+  const parsed = parseExamHtml(html, 'sectioned-exam.html');
+  assert.deepEqual(parsed.bankSummaries, [{ bankKey: 'الاختبار كاملاً', questionCount: 2 }]);
+  assert.deepEqual(parsed.generalQuestions.map((question) => question.qAr), ['الأول', 'الثاني']);
+  assert.deepEqual(parsed.generalQuestions.map((question) => question.id), ['القسم الأول-Q1', 'القسم الثاني-Q1']);
+  assert.equal(parsed.generalQuestions[1].answer, 1);
+});
+
+test('rejects executable section-map references without running them', () => {
+  const html = `<html><script>
+    const sectionQuestionsMap = { first: (() => { globalThis.__sectionMapPwned = true; return []; })() };
+  </script></html>`;
+  assert.throws(() => parseExamHtml(html, 'executable-section-map.html'), /static object literal|static question arrays|unsupported/i);
+  assert.equal(globalThis.__sectionMapPwned, undefined);
+});
+
 test('imports text PDFs only when explicit options and an answer key are present', () => {
   const text = [
     '1) ما رمز الماء؟',

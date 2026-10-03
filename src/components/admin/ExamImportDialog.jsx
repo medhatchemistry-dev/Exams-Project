@@ -45,7 +45,16 @@ export default function ExamImportDialog({ onClose, onImported }) {
   const tracks = grade ? Object.keys(STRUCTURE[grade] || {}) : [];
   const sections = grade && track ? STRUCTURE[grade]?.[track] || [] : [];
   const bankKey = grade && track ? `${grade}-${track}` : '';
-  const chosenQuestions = preview?.banks?.[bankKey] || [];
+  const chosenQuestions = preview?.banks?.[bankKey] || preview?.generalQuestions || [];
+
+  const selectInitialBank = (parsed) => {
+    const firstBank = parsed.bankSummaries[0]?.bankKey || '';
+    const [firstGrade, firstTrack] = firstBank.split('-');
+    if (parsed.banks?.[firstBank] && STRUCTURE[firstGrade]?.[firstTrack]) {
+      setGrade(firstGrade);
+      setTrack(firstTrack);
+    }
+  };
 
   const acceptFile = async (nextFile) => {
     setFile(nextFile || null);
@@ -69,9 +78,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
     try {
       const parsed = parseExamHtml(await nextFile.text(), nextFile.name);
       setPreview(parsed);
-      const firstBank = parsed.bankSummaries[0]?.bankKey || '';
-      const [firstGrade, firstTrack] = firstBank.split('-');
-      if (firstGrade && firstTrack) { setGrade(firstGrade); setTrack(firstTrack); }
+      selectInitialBank(parsed);
     } catch (parseError) {
       console.error('Exam HTML import validation failed:', parseError);
       setError(parseError.message || 'لم أستطع قراءة ملف HTML.');
@@ -99,9 +106,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
       setPreview(parsed);
       setSourceLabel(parsedUrl.hostname);
       setTitle((current) => current || parsedUrl.hostname.replace(/^www\./, ''));
-      const firstBank = parsed.bankSummaries[0]?.bankKey || '';
-      const [firstGrade, firstTrack] = firstBank.split('-');
-      if (firstGrade && firstTrack) { setGrade(firstGrade); setTrack(firstTrack); }
+      selectInitialBank(parsed);
     } catch (loadError) {
       console.error('Exam URL import failed:', loadError);
       const browserBlocked = loadError instanceof TypeError || loadError.name === 'AbortError';
@@ -139,7 +144,8 @@ export default function ExamImportDialog({ onClose, onImported }) {
       }
       setBusy(false);
     }
-    if (!parsed?.banks?.[bankKey]?.length) { setError(`لم أجد بنك أسئلة للصف ${grade} والمسار ${track} في المصدر.`); return; }
+    const selectedQuestions = parsed?.banks?.[bankKey] || parsed?.generalQuestions || [];
+    if (!selectedQuestions.length) { setError(`لم أجد أسئلة للاختبار المحدد.`); return; }
     setStep(2);
   };
 
