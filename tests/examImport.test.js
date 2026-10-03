@@ -9,6 +9,7 @@ globalThis.DOMParser = dom.window.DOMParser;
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 const { parseExamHtml, sanitizeExamBanks } = await import('../src/lib/examImport.js');
+const { parseExamPdfText } = await import('../src/lib/examPdfText.js');
 
 function htmlFor(expression) {
   return `<!doctype html><html><body><script>const questionBanksByGrade = ${expression};</script></body></html>`;
@@ -108,4 +109,29 @@ test('public legacy question bank contains questions but no answer keys', () => 
   for (const question of questions) {
     assert.ok(!question.properties.some((property) => property.key?.name === 'answer'));
   }
+});
+
+test('imports text PDFs only when explicit options and an answer key are present', () => {
+  const text = [
+    '1) ما رمز الماء؟',
+    'A) H2O',
+    'B) CO2',
+    'C) O2',
+    'D) H2',
+    '2. ما رمز الأكسجين؟',
+    'أ) H2',
+    'ب) O2',
+    'ج) N2',
+    'د) CO2',
+    'Answer Key: 1-A, 2-B',
+  ].join('\n');
+  const parsed = parseExamPdfText(text, '10-متقدم');
+  assert.equal(parsed.bankSummaries[0].questionCount, 2);
+  assert.equal(parsed.banks['10-متقدم'][0].answer, 0);
+  assert.equal(parsed.banks['10-متقدم'][1].answer, 1);
+});
+
+test('never asks Jev to guess missing answer keys for imported PDFs', () => {
+  assert.throws(() => parseExamPdfText('1) سؤال\nA) أ\nB) ب', '10-متقدم'), /مفتاح الإجابة/);
+  assert.throws(() => parseExamPdfText('', '10-متقدم'), /استخراج نص/);
 });

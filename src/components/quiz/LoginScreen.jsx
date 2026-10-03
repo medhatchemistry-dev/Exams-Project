@@ -4,7 +4,7 @@ import { FlaskConical, Phone, ShieldCheck, Settings } from 'lucide-react';
 import MathText from './MathText';
 import StudentPicker from './StudentPicker';
 
-export default function LoginScreen({ onStart }) {
+export default function LoginScreen({ onStart, targetClass = null }) {
   return (
     <div className="mol-wrap max-w-5xl mx-auto px-4 py-10 md:py-16">
       {/* Hero */}
@@ -56,7 +56,7 @@ export default function LoginScreen({ onStart }) {
           </div>
         </div>
 
-        <StudentPicker onStart={onStart} />
+        <StudentPicker onStart={onStart} targetClass={targetClass} />
 
         <p className="text-center text-xs font-bold mt-6" style={{ color: 'var(--mol-muted)' }}>
           <MathText>المدة: 45 دقيقة • 25 سؤالاً • مراقبة أمنية تلقائية</MathText>

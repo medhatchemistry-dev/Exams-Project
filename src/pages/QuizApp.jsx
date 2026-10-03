@@ -193,6 +193,14 @@ export default function QuizApp() {
   const beginExam = useCallback(
     async (info) => {
       if (validatedExam?.legacy && !banks) return;
+      if (validatedExam?.targetGrade && (
+        info.grade !== validatedExam.targetGrade
+        || info.track !== validatedExam.targetTrack
+        || info.section !== validatedExam.targetSection
+      )) {
+        showAlert('هذا الاختبار مخصص لشعبة أخرى', `الاختبار مخصص للصف ${validatedExam.targetGrade} · ${validatedExam.targetTrack} · شعبة ${validatedExam.targetSection}.`);
+        return;
+      }
       if (!await isExamCodeActive()) {
         setScreen('access');
         showAlert('انتهت صلاحية الرمز', 'أوقف المعلم الاختبار أو انتهت صلاحية الرمز. اطلب رمزاً صالحاً للمتابعة.');
@@ -355,7 +363,14 @@ export default function QuizApp() {
       {screen === 'access' && <ExamCodeScreen onContinue={validateExamCode} />}
 
       {screen === 'login' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (
-        <LoginScreen onStart={handleStart} />
+    <LoginScreen
+      onStart={handleStart}
+      targetClass={validatedExam?.targetGrade ? {
+        grade: validatedExam.targetGrade,
+        track: validatedExam.targetTrack,
+        section: validatedExam.targetSection,
+      } : null}
+    />
       )}
 
       {screen === 'quiz' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (

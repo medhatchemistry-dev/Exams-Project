@@ -4,10 +4,10 @@ import { Loader2 } from 'lucide-react';
 import { STRUCTURE, GRADE_LABELS } from '@/lib/academicStructure';
 import OtherStudentForm from './OtherStudentForm';
 
-export default function StudentPicker({ onStart }) {
-  const [grade, setGrade] = useState('');
-  const [track, setTrack] = useState('');
-  const [section, setSection] = useState('');
+export default function StudentPicker({ onStart, targetClass = null }) {
+  const [grade, setGrade] = useState(targetClass?.grade || '');
+  const [track, setTrack] = useState(targetClass?.track || '');
+  const [section, setSection] = useState(targetClass?.section || '');
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -18,8 +18,12 @@ export default function StudentPicker({ onStart }) {
   const sections = grade && track ? STRUCTURE[grade][track] || [] : [];
   const ready = grade && track && section;
 
-  useEffect(() => { setTrack(''); setSection(''); setStudents([]); setSelectedId(''); setShowOther(false); }, [grade]);
-  useEffect(() => { setSection(''); setStudents([]); setSelectedId(''); setShowOther(false); }, [track]);
+  useEffect(() => {
+    if (!targetClass) return;
+    setGrade(targetClass.grade || '');
+    setTrack(targetClass.track || '');
+    setSection(targetClass.section || '');
+  }, [targetClass?.grade, targetClass?.track, targetClass?.section]);
 
   useEffect(() => {
     if (!ready) { setStudents([]); return; }
@@ -65,21 +69,21 @@ export default function StudentPicker({ onStart }) {
       <div className="grid md:grid-cols-3 gap-5">
         <div>
           <label className="mol-label">الصف الدراسي</label>
-          <select className="mol-input" value={grade} onChange={(e) => setGrade(e.target.value)}>
+          <select className="mol-input" value={grade} disabled={Boolean(targetClass?.grade)} onChange={(e) => { setGrade(e.target.value); setTrack(''); setSection(''); }}>
             <option value="">اختر الصف</option>
             {Object.keys(STRUCTURE).map((g) => <option key={g} value={g}>{GRADE_LABELS[g]} ({g})</option>)}
           </select>
         </div>
         <div>
           <label className="mol-label">المسار</label>
-          <select className="mol-input" value={track} onChange={(e) => setTrack(e.target.value)} disabled={!grade}>
+          <select className="mol-input" value={track} onChange={(e) => { setTrack(e.target.value); setSection(''); }} disabled={!grade || Boolean(targetClass?.track)}>
             <option value="">اختر المسار</option>
             {tracks.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div>
           <label className="mol-label">الشعبة</label>
-          <select className="mol-input" value={section} onChange={(e) => setSection(e.target.value)} disabled={!track}>
+          <select className="mol-input" value={section} onChange={(e) => setSection(e.target.value)} disabled={!track || Boolean(targetClass?.section)}>
             <option value="">اختر الشعبة</option>
             {sections.map((s) => <option key={s} value={s}>شعبة {s}</option>)}
           </select>
@@ -117,6 +121,7 @@ export default function StudentPicker({ onStart }) {
           defaultGrade={grade}
           defaultTrack={track}
           defaultSection={section}
+          targetClass={targetClass}
           onCancel={() => setShowOther(false)}
           onStart={onStart}
         />

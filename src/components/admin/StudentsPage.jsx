@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, Edit3, Loader2, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
 import { STRUCTURE, GRADE_LABELS } from '@/lib/academicStructure';
 import { downloadStudentTemplate, parseStudentWorkbook, validateStudentRows } from '@/lib/studentWorkbook';
 import { deleteStudent, getExistingStudentNumbers, listStudents, saveStudent, upsertStudents } from '@/lib/studentRepository';
@@ -50,7 +51,16 @@ export default function StudentsPage() {
     setError('');
     setNotice('');
     try {
-      const initial = await parseStudentWorkbook(await file.arrayBuffer());
+      const initial = await parseStudentWorkbook(await file.arrayBuffer(), new Set(), {
+        defaultValues: { grade, track, section },
+        suggestHeaderMapping: async (headers, unmappedFields) => {
+          const { data, error } = await supabase.functions.invoke('jev-import-assist', {
+            body: { action: 'map-student-headers', headers, unmappedFields },
+          });
+          if (error) throw error;
+          return data?.mapping || {};
+        },
+      });
       const existing = await getExistingStudentNumbers(initial.validRows.map((row) => row.student_number));
       const preview = validateStudentRows(
         [...initial.validRows, ...initial.invalidRows.map((row) => ({ ...row.student, sourceRow: row.sourceRow }))],
@@ -64,7 +74,7 @@ export default function StudentsPage() {
   };
 
   const saveImport = async () => {
-    if (!importRows || importRows.invalidRows.length || !importRows.validRows.length) return;
+    if (!importRows || !importRows.validRows.length) return;
     setSaving(true);
     setImportProgress('جارٍ رفع الصفوف…');
     setError('');

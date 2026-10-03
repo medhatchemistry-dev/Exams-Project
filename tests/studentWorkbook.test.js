@@ -47,9 +47,57 @@ test('parses uploaded XLSX rows from the documented worksheet', async () => {
   assert.equal(parsed.validRows[0].student_number, '20001');
 });
 
-test('rejects workbook without the Students sheet and oversized uploads', async () => {
+test('rejects workbook without student data and oversized uploads', async () => {
   const workbook = createStudentTemplate();
   workbook.removeWorksheet(workbook.getWorksheet('Students').id);
-  await assert.rejects(parseStudentWorkbook(await workbook.xlsx.writeBuffer()), /ورقة باسم Students/);
+  await assert.rejects(parseStudentWorkbook(await workbook.xlsx.writeBuffer()), /بيانات طلاب/);
   await assert.rejects(parseStudentWorkbook(new ArrayBuffer(10 * 1024 * 1024 + 1)), /10 MiB|size/i);
+});
+
+test('reads reordered bilingual headers below title rows from a differently named sheet', async () => {
+  const workbook = createStudentTemplate();
+  workbook.removeWorksheet(workbook.getWorksheet('Students').id);
+  const roster = workbook.addWorksheet('Roster 2026');
+  roster.addRow(['School roster']);
+  roster.addRow([]);
+  roster.addRow(['Arabic Student Name', 'Student No.', 'Grade', 'Track', 'Section']);
+  roster.addRow(['مريم علي', '002001', '11', 'متقدم', '2']);
+
+  const parsed = await parseStudentWorkbook(await workbook.xlsx.writeBuffer());
+  assert.equal(parsed.worksheet, 'Roster 2026');
+  assert.equal(parsed.headerRow, 3);
+  assert.equal(parsed.validRows[0].student_number, '002001');
+  assert.equal(parsed.validRows[0].full_name_ar, 'مريم علي');
+  assert.equal(parsed.validRows[0].full_name_en, '');
+});
+
+test('combines split names and fills missing class columns from selected filters', async () => {
+  const workbook = createStudentTemplate();
+  const sheet = workbook.getWorksheet('Students');
+  sheet.spliceRows(1, sheet.rowCount, ['رقم الطالب', 'First Name AR', 'Middle Name AR', 'Last Name AR', 'First Name EN', 'Last Name EN']);
+  sheet.addRow(['002002', 'نور', 'محمد', 'علي', 'Noor', 'Ali']);
+
+  const parsed = await parseStudentWorkbook(await workbook.xlsx.writeBuffer(), new Set(), {
+    defaultValues: { grade: '12', track: 'عام', section: '1' },
+  });
+  assert.equal(parsed.validRows.length, 1);
+  assert.equal(parsed.validRows[0].full_name_ar, 'نور محمد علي');
+  assert.equal(parsed.validRows[0].full_name_en, 'Noor Ali');
+  assert.equal(parsed.validRows[0].grade, '12');
+});
+
+test('uses an injected header suggestion only when deterministic matching misses a field', async () => {
+  const workbook = new (await import('exceljs')).default.Workbook();
+  const sheet = workbook.addWorksheet('Import');
+  sheet.addRow(['رقم مدرسي', 'اسم الطالبة', 'الصف', 'المسار', 'الشعبة']);
+  sheet.addRow(['002003', 'أمل صالح', '11', 'عام', '1']);
+  let suggestionRequest;
+  const parsed = await parseStudentWorkbook(await workbook.xlsx.writeBuffer(), new Set(), {
+    suggestHeaderMapping: async (headers, fields) => {
+      suggestionRequest = { headers, fields };
+      return { student_number: 1, full_name_ar: 2 };
+    },
+  });
+  assert.equal(suggestionRequest.fields.includes('student_number'), true);
+  assert.equal(parsed.validRows[0].student_number, '002003');
 });

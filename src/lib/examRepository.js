@@ -2,7 +2,7 @@ import { supabase } from '@/api/supabaseClient';
 
 export async function listExams() {
   const { data, error } = await supabase.from('exams')
-    .select('id, title, source_filename, banks, status, certificate_template_id, created_at, updated_at')
+    .select('id, title, source_filename, banks, status, certificate_template_id, target_grade, target_track, target_section, completed_at, created_at, updated_at')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data || []).map((exam) => ({
@@ -12,7 +12,8 @@ export async function listExams() {
 }
 
 export async function saveExam(exam) {
-  const { data, error } = await supabase.from('exams').insert(exam).select('id, title, status').single();
+  const { data, error } = await supabase.from('exams').insert(exam)
+    .select('id, title, status, target_grade, target_track, target_section, completed_at').single();
   if (error) throw error;
   return data;
 }
@@ -24,6 +25,12 @@ export async function archiveExam(examId) {
   if (activeCodes?.length) throw new Error('Deactivate the active exam code before archiving this exam.');
   const { error } = await supabase.from('exams').update({ status: 'archived', updated_at: new Date().toISOString() }).eq('id', examId);
   if (error) throw error;
+}
+
+export async function completeExam(examId) {
+  const { data, error } = await supabase.rpc('complete_exam', { target_exam_id: Number(examId) });
+  if (error) throw error;
+  return data;
 }
 
 export async function saveExamCertificateTemplate(examId, templateId) {

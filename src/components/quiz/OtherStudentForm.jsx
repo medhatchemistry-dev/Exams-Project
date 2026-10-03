@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { GRADE_LABELS, STRUCTURE } from '@/lib/academicStructure';
 
-export default function OtherStudentForm({ defaultGrade, defaultTrack, defaultSection, onCancel, onStart }) {
+export default function OtherStudentForm({ defaultGrade, defaultTrack, defaultSection, targetClass = null, onCancel, onStart }) {
   const [name, setName] = useState('');
   const [idNum, setIdNum] = useState('');
-  const [grade, setGrade] = useState(defaultGrade);
-  const [track, setTrack] = useState(defaultTrack);
-  const [section, setSection] = useState(defaultSection);
+  const [grade, setGrade] = useState(targetClass?.grade || defaultGrade);
+  const [track, setTrack] = useState(targetClass?.track || defaultTrack);
+  const [section, setSection] = useState(targetClass?.section || defaultSection);
 
   const tracks = Object.keys(STRUCTURE[grade] || {});
   const sections = STRUCTURE[grade]?.[track] || [];
@@ -31,20 +31,20 @@ export default function OtherStudentForm({ defaultGrade, defaultTrack, defaultSe
         </div>
         <div>
           <label className="mol-label">الصف</label>
-          <select className="mol-input" value={grade} onChange={(e) => { setGrade(e.target.value); setTrack(''); setSection(''); }}>
+          <select className="mol-input" value={grade} disabled={Boolean(targetClass?.grade)} onChange={(e) => { setGrade(e.target.value); setTrack(''); setSection(''); }}>
             {Object.keys(STRUCTURE).map((g) => <option key={g} value={g}>{GRADE_LABELS[g]} ({g})</option>)}
           </select>
         </div>
         <div>
           <label className="mol-label">المسار</label>
-          <select className="mol-input" value={track} onChange={(e) => { setTrack(e.target.value); setSection(''); }}>
+          <select className="mol-input" value={track} disabled={Boolean(targetClass?.track)} onChange={(e) => { setTrack(e.target.value); setSection(''); }}>
             <option value="">اختر المسار</option>
             {tracks.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div>
           <label className="mol-label">الشعبة</label>
-          <select className="mol-input" value={section} onChange={(e) => setSection(e.target.value)} disabled={!track}>
+          <select className="mol-input" value={section} onChange={(e) => setSection(e.target.value)} disabled={!track || Boolean(targetClass?.section)}>
             <option value="">اختر الشعبة</option>
             {sections.map((s) => <option key={s} value={s}>شعبة {s}</option>)}
           </select>
