@@ -105,7 +105,17 @@ Set `EXPERIENTIAL_API_KEY` in the Supabase project's Edge Function secrets befor
 
 All functions use server-side Supabase secrets. Never expose a service-role/secret key, teacher password, or password hash in the frontend, repository, or Git history. The teacher password hash is stored in the single allowed row of `public.teacher_login_passwords` and checked server-side. `teacher-login` uses `TEACHER_LOGIN_EMAIL` when configured; otherwise it uses the default email in the function source, then creates or updates the matching Auth identity after password verification.
 
-The Edge Functions currently allow local development origins (`localhost` and `127.0.0.1`) and HTTPS hosts matching `exams-project` Vercel deployment domains. Update their origin allowlist if the app is served from a different custom domain.
+### Production teacher login and allowed origins
+
+The teacher password is verified against the hash in the connected Supabase database; it is not configured in this repository or in the website's build variables. If the password is accepted by `public.verify_teacher_password` but the browser still cannot log in, check the Edge Function logs for a rejected `OPTIONS` preflight. A `403` at that stage means the production website origin is not allowed, and the password has not been checked.
+
+The functions allow local development and the legacy `exams-project*.vercel.app` origins. For any custom production hostname, configure the exact HTTPS origin in the Supabase Edge Function secret `APP_ALLOWED_ORIGINS` (comma-separated when multiple origins are needed):
+
+```bash
+supabase secrets set APP_ALLOWED_ORIGINS="https://YOUR_EXACT_PRODUCTION_HOST" --project-ref YOUR_PROJECT_REF
+```
+
+Use an origin only (`https://hostname`), with no path or trailing slash. Do not use `*`, all of `vercel.app`, or a hostname belonging to another site. After a domain change, update this secret for the correct Supabase project. The same origin check is used by `teacher-login`, `validate-exam-code`, and `jev-import-assist`.
 
 ## Project structure
 
