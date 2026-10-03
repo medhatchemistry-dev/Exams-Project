@@ -3,6 +3,7 @@ import { ArrowRight, CheckCircle2, Download, Eye, FileSpreadsheet, Loader2, Sear
 import { supabase } from '@/api/supabaseClient';
 import { STRUCTURE, GRADE_LABELS } from '@/lib/academicStructure';
 import { completeExam } from '@/lib/examRepository';
+import { filterExamsByGrade, getExamNumbers } from '@/lib/examNumbers';
 import { exportResultsCsv } from '@/lib/excelExport';
 import ResultDetailModal from './ResultDetailModal';
 
@@ -26,6 +27,7 @@ function classLabel(exam) {
 
 export default function ResultsPanel() {
   const [exams, setExams] = useState([]);
+  const [examGradeFilter, setExamGradeFilter] = useState('');
   const [counts, setCounts] = useState({});
   const [examId, setExamId] = useState('');
   const [grade, setGrade] = useState('');
@@ -45,6 +47,8 @@ export default function ResultsPanel() {
   const tracks = grade ? Object.keys(STRUCTURE[grade]) : [];
   const sections = grade && track ? STRUCTURE[grade][track] || [] : [];
   const selectedExam = useMemo(() => exams.find((exam) => String(exam.id) === String(examId)), [exams, examId]);
+  const examNumbers = useMemo(() => getExamNumbers(exams), [exams]);
+  const visibleExams = useMemo(() => filterExamsByGrade(exams, examGradeFilter), [examGradeFilter, exams]);
 
   const loadExams = useCallback(async () => {
     setLoading(true);
@@ -132,18 +136,18 @@ export default function ResultsPanel() {
       {error && <p role="alert" className="mol-card p-4 font-bold" style={{ color: 'var(--mol-red)' }}>{error}<button type="button" className="mol-btn mol-btn-ghost ml-3 px-3 py-1" onClick={examId ? loadResults : loadExams}>إعادة المحاولة</button></p>}
       {loading && !examId ? <div role="status" className="mol-card flex items-center gap-2 p-8 font-bold"><Loader2 size={18} className="animate-spin" /> جارٍ تحميل سجل الاختبارات…</div> : !examId ? (
         <>
-          <header className="mol-card flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="text-xl font-extrabold">درجات الاختبارات</h2><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>اختر اختباراً لمراجعة إجابات الطلاب أو تنزيل درجاته.</p></div><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2" onClick={loadExams} disabled={loading}><FileSpreadsheet size={16} /> تحديث السجل</button></header>
-          {!loading && exams.length === 0 ? <div className="mol-card p-8 text-center font-bold" style={{ color: 'var(--mol-muted)' }}>لا توجد اختبارات بعد. أنشئ اختباراً من صفحة الاختبارات لتظهر درجاته هنا.</div> : <div className="grid gap-3 lg:grid-cols-2">{exams.map((exam) => {
+          <header className="mol-card flex flex-wrap items-center justify-between gap-3 p-5"><div><h2 className="text-xl font-extrabold">درجات الاختبارات</h2><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>اختر اختباراً لمراجعة إجابات الطلاب أو تنزيل درجاته.</p></div><div className="flex flex-wrap items-end gap-2"><label className="mol-label">تصفية حسب الصف<select aria-label="تصفية الاختبارات حسب الصف" className="mol-input mt-1 min-w-36" value={examGradeFilter} onChange={(event) => setExamGradeFilter(event.target.value)}><option value="">كل الصفوف</option>{Object.keys(STRUCTURE).map((value) => <option key={value} value={value}>{GRADE_LABELS[value]} ({value})</option>)}</select></label><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2" onClick={loadExams} disabled={loading}><FileSpreadsheet size={16} /> تحديث السجل</button></div></header>
+          {!loading && exams.length === 0 ? <div className="mol-card p-8 text-center font-bold" style={{ color: 'var(--mol-muted)' }}>لا توجد اختبارات بعد. أنشئ اختباراً من صفحة الاختبارات لتظهر درجاته هنا.</div> : visibleExams.length === 0 ? <div className="mol-card p-8 text-center font-bold" style={{ color: 'var(--mol-muted)' }}>لا توجد اختبارات للصف {examGradeFilter}.</div> : <div className="grid gap-3 lg:grid-cols-2">{visibleExams.map((exam) => {
             const completed = Boolean(exam.completed_at);
             return <button type="button" key={exam.id} onClick={() => openExam(exam.id)} className="mol-card flex w-full items-center justify-between gap-4 p-4 text-right transition hover:-translate-y-0.5" style={{ borderColor: completed ? 'var(--mol-cobalt)' : undefined }}>
-              <span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className="truncate">{exam.title}</strong><span className="rounded-full px-2 py-1 text-xs font-extrabold" style={{ color: completed ? 'var(--mol-cobalt)' : 'var(--mol-green)', background: completed ? 'var(--mol-cobalt-soft)' : 'var(--mol-green-soft)' }}>{completed ? 'مكتمل' : 'جارٍ'}</span></span><span className="mt-1 block text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{classLabel(exam)} · {new Date(exam.created_at).toLocaleDateString('ar')}</span><span className="mt-2 block text-sm font-extrabold">{counts[exam.id] ?? '—'} طالباً أرسل إجابته</span></span><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: 'var(--mol-cobalt-soft)', color: 'var(--mol-cobalt)' }}><ArrowRight size={18} /></span>
+              <span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className="truncate">{exam.title}</strong><span className="rounded-full px-2 py-1 text-xs font-extrabold" style={{ color: 'var(--mol-cobalt)', background: 'var(--mol-cobalt-soft)' }}>اختبار {examNumbers.get(String(exam.id))}</span><span className="rounded-full px-2 py-1 text-xs font-extrabold" style={{ color: completed ? 'var(--mol-cobalt)' : 'var(--mol-green)', background: completed ? 'var(--mol-cobalt-soft)' : 'var(--mol-green-soft)' }}>{completed ? 'مكتمل' : 'جارٍ'}</span></span><span className="mt-1 block text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{classLabel(exam)} · {new Date(exam.created_at).toLocaleDateString('ar')}</span><span className="mt-2 block text-sm font-extrabold">{counts[exam.id] ?? '—'} طالباً أرسل إجابته</span></span><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl" style={{ background: 'var(--mol-cobalt-soft)', color: 'var(--mol-cobalt)' }}><ArrowRight size={18} /></span>
             </button>;
           })}</div>}
         </>
       ) : (
         <>
           <header className="mol-card flex flex-wrap items-center justify-between gap-3 p-5">
-            <div className="flex items-start gap-3"><button type="button" aria-label="العودة إلى سجل الاختبارات" className="mol-btn mol-btn-ghost mt-1 grid h-9 w-9 place-items-center p-0" onClick={() => { setExamId(''); setError(''); }}><ArrowRight size={17} /></button><div><p className="text-sm font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>نتائج الاختبار</p><h2 className="text-xl font-extrabold">{selectedExam?.title}</h2><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{classLabel(selectedExam || {})} · {resultCount} إجابة</p></div></div>
+            <div className="flex items-start gap-3"><button type="button" aria-label="العودة إلى سجل الاختبارات" className="mol-btn mol-btn-ghost mt-1 grid h-9 w-9 place-items-center p-0" onClick={() => { setExamId(''); setError(''); }}><ArrowRight size={17} /></button><div><p className="text-sm font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>نتائج الاختبار · رقم {selectedExam ? examNumbers.get(String(selectedExam.id)) : '—'}</p><h2 className="text-xl font-extrabold">{selectedExam?.title}</h2><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{classLabel(selectedExam || {})} · {resultCount} إجابة</p></div></div>
             <div className="flex flex-wrap gap-2">{!selectedExam?.completed_at && <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2" disabled={completing} onClick={markComplete}>{completing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} إنهاء الاختبار</button>}<button type="button" className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-4 py-2.5" onClick={downloadGrades} disabled={resultCount === 0 || exporting}><Download size={17} />{exporting ? 'جارٍ تجهيز الملف…' : 'تنزيل درجات الاختبار'}</button></div>
           </header>
           <div className="mol-card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
