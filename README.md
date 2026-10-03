@@ -109,10 +109,10 @@ All functions use server-side Supabase secrets. Never expose a service-role/secr
 
 The teacher password is verified against the hash in the connected Supabase database; it is not configured in this repository or in the website's build variables. If the password is accepted by `public.verify_teacher_password` but the browser still cannot log in, check the Edge Function logs for a rejected `OPTIONS` preflight. A `403` at that stage means the production website origin is not allowed, and the password has not been checked.
 
-The functions allow local development and the legacy `exams-project*.vercel.app` origins. For any custom production hostname, configure the exact HTTPS origin in the Supabase Edge Function secret `APP_ALLOWED_ORIGINS` (comma-separated when multiple origins are needed):
+The functions allow local development and the legacy `exams-project*.vercel.app` origins. The current main production site is `https://chemistry-khalid.vercel.app`; its exact origin is configured in the Exams Supabase project. For any custom production hostname, configure the exact HTTPS origin in the Supabase Edge Function secret `APP_ALLOWED_ORIGINS` (comma-separated when multiple origins are needed):
 
 ```bash
-supabase secrets set APP_ALLOWED_ORIGINS="https://YOUR_EXACT_PRODUCTION_HOST" --project-ref YOUR_PROJECT_REF
+supabase secrets set APP_ALLOWED_ORIGINS="https://chemistry-khalid.vercel.app" --project-ref eybupykryqjgjvcbwsqi
 ```
 
 Use an origin only (`https://hostname`), with no path or trailing slash. Do not use `*`, all of `vercel.app`, or a hostname belonging to another site. After a domain change, update this secret for the correct Supabase project. The same origin check is used by `teacher-login`, `validate-exam-code`, and `jev-import-assist`.
