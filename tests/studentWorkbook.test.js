@@ -47,6 +47,19 @@ test('parses uploaded XLSX rows from the documented worksheet', async () => {
   assert.equal(parsed.validRows[0].student_number, '20001');
 });
 
+test('normalizes a one-character track typo to the only valid track for the grade', async () => {
+  const workbook = createStudentTemplate();
+  const sheet = workbook.getWorksheet('Students');
+  sheet.addRow(['727308', 'حمزة وائل', 'Hamza Wael', 10, 'متفدم', 1]);
+
+  const parsed = await parseStudentWorkbook(await workbook.xlsx.writeBuffer());
+
+  assert.equal(parsed.validRows.length, 1);
+  assert.equal(parsed.validRows[0].grade, '10');
+  assert.equal(parsed.validRows[0].track, 'متقدم');
+  assert.equal(parsed.validRows[0].section, '1');
+});
+
 test('rejects workbook without student data and oversized uploads', async () => {
   const workbook = createStudentTemplate();
   workbook.removeWorksheet(workbook.getWorksheet('Students').id);

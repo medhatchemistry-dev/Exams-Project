@@ -104,6 +104,35 @@ function stringValue(value) {
   return String(value).trim();
 }
 
+function editDistance(left, right) {
+  const a = Array.from(left);
+  const b = Array.from(right);
+  if (Math.abs(a.length - b.length) > 1) return 2;
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const above = row[j];
+      row[j] = a[i - 1] === b[j - 1]
+        ? diagonal
+        : Math.min(diagonal + 1, row[j] + 1, row[j - 1] + 1);
+      diagonal = above;
+    }
+    if (Math.min(...row) > 1) return 2;
+  }
+  return row[b.length];
+}
+
+function normalizeTrack(value, grade) {
+  const normalized = normalizeHeader(value).replace(/\s+/g, '');
+  const validTracks = Object.keys(STRUCTURE[grade] || {});
+  const exact = validTracks.find((track) => normalizeHeader(track).replace(/\s+/g, '') === normalized);
+  if (exact) return exact;
+  const nearMatches = validTracks.filter((track) => editDistance(normalizeHeader(track).replace(/\s+/g, ''), normalized) === 1);
+  return nearMatches.length === 1 ? nearMatches[0] : value;
+}
+
 function makeStudentWorkbook() {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Students');
@@ -205,6 +234,7 @@ export async function parseStudentWorkbook(input, existingStudentNumbers = new S
   worksheet.eachRow((excelRow, rowNumber) => {
     if (rowNumber <= headerRow) return;
     const row = Object.fromEntries(STUDENT_COLUMNS.map((column) => [column, (columns[column] ? readMappedValue(excelRow, columns[column]) : '') || String(defaults[column] ?? '')]));
+    row.track = normalizeTrack(row.track, row.grade);
     if (Object.values(row).every((value) => !value)) return;
     if (row.student_number === '00000' && row.full_name_ar.startsWith('مثال:')) return;
     rows.push({ ...row, sourceRow: rowNumber });
