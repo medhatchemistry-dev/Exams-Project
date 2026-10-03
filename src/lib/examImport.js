@@ -15,7 +15,9 @@ const SAFE_STYLE_PROPERTIES = new Set([
   'text-align', 'direction', 'border', 'border-color', 'border-width', 'border-style',
   'border-collapse', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
   'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'width', 'max-width',
-  'height', 'vertical-align', 'white-space', 'text-decoration', 'overflow-x', 'border-radius',
+  'height', 'max-height', 'vertical-align', 'white-space', 'text-decoration', 'overflow-x', 'border-radius',
+  'display', 'flex-wrap', 'flex-direction', 'flex', 'justify-content', 'align-items', 'gap',
+  'column-gap', 'row-gap', 'line-height', 'grid-template-columns',
 ]);
 const SAFE_DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/]+=*$/i;
 
@@ -129,21 +131,23 @@ function extractExamSource(html) {
   fail('HTML must contain exactly one questionBanksByGrade assignment');
 }
 
-function sanitizeStyle(style, context) {
+function sanitizeStyle(style) {
   const value = String(style || '').trim();
   if (!value) return '';
-  if (/url\s*\(|expression\s*\(|@import|position\s*:|[{}<>]/i.test(value)) fail(`${context}: unsafe inline style`);
+  if (/url\s*\(|expression\s*\(|@import|[{}<>]/i.test(value)) fail('unsafe inline style');
   const declarations = value.split(';').map((declaration) => declaration.trim()).filter(Boolean);
+  const safeDeclarations = [];
   for (const declaration of declarations) {
     const separator = declaration.indexOf(':');
-    if (separator < 1) fail(`${context}: malformed inline style`);
+    if (separator < 1) continue;
     const property = declaration.slice(0, separator).trim().toLowerCase();
     const propertyValue = declaration.slice(separator + 1).trim();
     if (!SAFE_STYLE_PROPERTIES.has(property) || !propertyValue || !/^[#(),.%\w\s-]+$/u.test(propertyValue)) {
-      fail(`${context}: unsafe or unsupported inline style`);
+      continue;
     }
+    safeDeclarations.push(`${property}: ${propertyValue}`);
   }
-  return declarations.join('; ');
+  return safeDeclarations.join('; ');
 }
 
 function sanitizeRichHtml(value, context) {
@@ -160,7 +164,7 @@ function sanitizeRichHtml(value, context) {
   const container = document.createElement('div');
   container.append(clean);
   for (const element of Array.from(container.querySelectorAll('*'))) {
-    if (element.hasAttribute('style')) element.setAttribute('style', sanitizeStyle(element.getAttribute('style'), context));
+    if (element.hasAttribute('style')) element.setAttribute('style', sanitizeStyle(element.getAttribute('style')));
     if (element.tagName === 'IMG') {
       const src = element.getAttribute('src') || '';
       if (!(src.startsWith('https://') || SAFE_DATA_IMAGE.test(src))) element.removeAttribute('src');
@@ -175,8 +179,10 @@ function sanitizeRichHtml(value, context) {
 function normalizeQuestion(question, bankKey, questionIndex) {
   const context = `${bankKey}, question ${questionIndex + 1}`;
   if (!question || typeof question !== 'object' || Array.isArray(question)) fail(`${context}: expected an object`);
-  const qAr = typeof question.qAr === 'string' ? question.qAr.trim() : '';
-  if (!qAr) fail(`${context}: Arabic question text is required`);
+  const qArValue = typeof question.qAr === 'string' ? question.qAr.trim() : '';
+  const qEnValue = typeof question.qEn === 'string' ? question.qEn.trim() : '';
+  const qAr = qArValue || qEnValue;
+  if (!qAr) fail(`${context}: question text is required in Arabic or English`);
   if (!Array.isArray(question.options) || question.options.length < 2 || question.options.length > 6) {
     fail(`${context}: expected 2 to 6 options`);
   }
@@ -184,17 +190,19 @@ function normalizeQuestion(question, bankKey, questionIndex) {
   if (!Number.isInteger(answer) || answer < 0 || answer >= question.options.length) fail(`${context}: answer index is outside the option list`);
   const options = question.options.map((option, optionIndex) => {
     if (!option || typeof option !== 'object' || Array.isArray(option)) fail(`${context}, option ${optionIndex + 1}: expected an object`);
-    const ar = typeof option.ar === 'string' ? option.ar.trim() : '';
-    if (!ar) fail(`${context}, option ${optionIndex + 1}: Arabic option text is required`);
+    const arValue = typeof option.ar === 'string' ? option.ar.trim() : '';
+    const enValue = typeof option.en === 'string' ? option.en.trim() : '';
+    const ar = arValue || enValue;
+    if (!ar) fail(`${context}, option ${optionIndex + 1}: option text is required in Arabic or English`);
     return {
       ar: sanitizeRichHtml(ar, `${context}, option ${optionIndex + 1}`),
-      ...(typeof option.en === 'string' && option.en.trim() ? { en: sanitizeRichHtml(option.en.trim(), `${context}, option ${optionIndex + 1}`) } : {}),
+      ...(enValue || arValue ? { en: sanitizeRichHtml(enValue || arValue, `${context}, option ${optionIndex + 1}`) } : {}),
     };
   });
   return {
     id: typeof question.id === 'string' && question.id.trim() ? question.id.trim().slice(0, 100) : `${bankKey}-${questionIndex + 1}`,
     qAr: sanitizeRichHtml(qAr, context),
-    ...(typeof question.qEn === 'string' && question.qEn.trim() ? { qEn: sanitizeRichHtml(question.qEn.trim(), context) } : {}),
+    ...(qEnValue || qArValue ? { qEn: sanitizeRichHtml(qEnValue || qArValue, context) } : {}),
     ...(typeof question.mediaHtml === 'string' && question.mediaHtml.trim() ? { mediaHtml: sanitizeRichHtml(question.mediaHtml, `${context}, media`) } : {}),
     options,
     answer,

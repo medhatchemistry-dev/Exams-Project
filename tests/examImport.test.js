@@ -111,6 +111,41 @@ test('public legacy question bank contains questions but no answer keys', () => 
   }
 });
 
+test('keeps safe exam layout styles and drops unsupported positioning styles', () => {
+  const bank = JSON.stringify({
+    '10-متقدم': [{
+      qAr: 'أي اختيار؟',
+      mediaHtml: '<div style="display:flex;justify-content:center;gap:20px;position:fixed;">محتوى</div>',
+      options: [{ ar: 'أ' }, { ar: 'ب' }],
+      answer: 1,
+    }],
+  });
+  const parsed = parseExamHtml(htmlFor(bank), 'layout-styles.html');
+  assert.match(parsed.banks['10-متقدم'][0].mediaHtml, /display: flex/);
+  assert.match(parsed.banks['10-متقدم'][0].mediaHtml, /justify-content: center/);
+  assert.match(parsed.banks['10-متقدم'][0].mediaHtml, /gap: 20px/);
+  assert.doesNotMatch(parsed.banks['10-متقدم'][0].mediaHtml, /position/);
+});
+
+test('imports questions with English-only choices and fills the display-language fallback', () => {
+  const bank = JSON.stringify({
+    '10-متقدم': [{
+      qEn: 'Which particle has a negative charge?',
+      options: [{ ar: '', en: 'Electron' }, { ar: '', en: 'Proton' }],
+      answer: 0,
+    }],
+  });
+
+  const parsed = parseExamHtml(htmlFor(bank), 'english-only-choices.html');
+  const question = parsed.banks['10-متقدم'][0];
+  assert.equal(question.qAr, 'Which particle has a negative charge?');
+  assert.equal(question.qEn, 'Which particle has a negative charge?');
+  assert.deepEqual(question.options, [
+    { ar: 'Electron', en: 'Electron' },
+    { ar: 'Proton', en: 'Proton' },
+  ]);
+});
+
 test('imports sectioned HTML question arrays through a static section map', () => {
   const sectionQuestion = (id, text, answer = 0) => ({
     id,
