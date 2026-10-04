@@ -22,6 +22,18 @@ function readAttempts() {
   }
 }
 
+async function getEdgeFunctionErrorMessage(error) {
+  const response = error?.context;
+  if (!(response instanceof Response)) return null;
+
+  try {
+    const payload = await response.clone().json();
+    return typeof payload?.error === 'string' ? payload.error : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function QuizApp() {
   const [banks, setBanks] = useState(null);
   const [banksError, setBanksError] = useState(false);
@@ -331,7 +343,21 @@ export default function QuizApp() {
           body: { action: 'start', code: accessCode, student: info, questions: exam },
         });
         if (error || !data?.started) {
-          showAlert('تعذر بدء المحاولة', data?.error || 'تعذر تسجيل بدء الاختبار. تحقق من الاتصال ثم أعد المحاولة.');
+          const serverMessage = await getEdgeFunctionErrorMessage(error);
+          console.error('Exam attempt start failed:', {
+            errorName: error?.name,
+            errorMessage: error?.message,
+            status: error?.context?.status,
+            serverMessage,
+          });
+          if (document.fullscreenElement && document.exitFullscreen) {
+            await document.exitFullscreen().catch(() => {});
+          }
+          const backendMessage = data?.error || serverMessage;
+          const unsupportedStartMessage = !error && data?.valid
+            ? 'الخادم المتصل بهذا الموقع لا يدعم بدء المحاولات بعد. تحقق من ربط معاينة master بمشروع Supabase الخاص بـ master ثم أعد نشرها.'
+            : null;
+          showAlert('تعذر بدء المحاولة', backendMessage || unsupportedStartMessage || 'تعذر تسجيل بدء الاختبار. تحقق من الاتصال ثم أعد المحاولة.');
           return;
         }
         startedAttemptId = data.attemptId;
