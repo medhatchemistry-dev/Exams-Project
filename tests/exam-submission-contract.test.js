@@ -7,6 +7,7 @@ const migrationName = readdirSync(migrationDir).filter((name) => name.endsWith('
 const migration = readFileSync(new URL(`../supabase/migrations/${migrationName}`, import.meta.url), 'utf8');
 const gradingMigrationName = readdirSync(migrationDir).filter((name) => name.endsWith('_secure_imported_exam_answer_grading.sql')).sort().at(-1);
 const gradingMigration = readFileSync(new URL(`../supabase/migrations/${gradingMigrationName}`, import.meta.url), 'utf8');
+const lifecycleMigration = readFileSync(new URL('../supabase/migrations/20261004070742_exam_lifecycle_attempts_and_events.sql', import.meta.url), 'utf8');
 const validationFunction = readFileSync(new URL('../supabase/functions/validate-exam-code/index.ts', import.meta.url), 'utf8');
 const quizApp = readFileSync(new URL('../src/pages/QuizApp.jsx', import.meta.url), 'utf8');
 
@@ -26,8 +27,10 @@ test('exam validation strips answer keys from the response payload', () => {
 
 test('dispatches imported exam submissions to the server-side grading RPC', () => {
   assert.match(validationFunction, /body\?\.action === 'submit'/);
-  assert.match(validationFunction, /admin\.rpc\('submit_exam_attempt'/);
+  assert.match(validationFunction, /admin\.rpc\('submit_exam_attempt_for_attempt'/);
   assert.match(validationFunction, /presented_questions_input: body\.questions/);
+  assert.match(validationFunction, /target_attempt_id: body\.attemptId/);
+  assert.match(lifecycleMigration, /public\.submit_exam_attempt\(/);
   assert.match(validationFunction, /questions: result\?\.questions_json/);
 });
 

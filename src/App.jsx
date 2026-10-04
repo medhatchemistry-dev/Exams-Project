@@ -18,6 +18,7 @@ import CertificatesPage from '@/components/admin/CertificatesPage';
 import StudentsPage from '@/components/admin/StudentsPage';
 import StudentHistoryPage from '@/components/admin/StudentHistoryPage';
 import ExamsPage from '@/components/admin/ExamsPage';
+import ExamDetailPage from '@/components/admin/ExamDetailPage';
 
 const AuthenticatedApp = () => {
   // Public chemistry quiz — no auth gate required
@@ -32,6 +33,7 @@ const AuthenticatedApp = () => {
           <Route path="students" element={<StudentsPage />} />
           <Route path="students/:studentId" element={<StudentHistoryPage />} />
           <Route path="exams" element={<ExamsPage />} />
+          <Route path="exams/:examId" element={<ExamDetailPage />} />
         </Route>
       </Route>
       <Route path="/login" element={<Navigate to="/admin" replace />} />

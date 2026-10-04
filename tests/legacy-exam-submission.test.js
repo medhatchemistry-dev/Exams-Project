@@ -134,8 +134,9 @@ test('the trusted legacy bank migration is private to the service role and seeds
   ])));
 });
 
-test('imported submissions retain the existing server-side grading RPC', () => {
-  assert.match(edgeFunction, /admin\.rpc\('submit_exam_attempt'/);
+test('imported submissions use the attempt-guarded server-side grading RPC', () => {
+  assert.match(edgeFunction, /admin\.rpc\('submit_exam_attempt_for_attempt'/);
+  assert.match(edgeFunction, /target_attempt_id: body\.attemptId/);
   assert.match(edgeFunction, /if \(resolution\.legacy\)/);
   assert.match(edgeFunction, /buildLegacySubmission\(/);
 });

@@ -239,6 +239,12 @@ export function sanitizeExamBanks(rawBanks) {
   return validateBanks(rawBanks).banks;
 }
 
+export function sanitizePublicExamQuestion(question, bankKey, questionIndex) {
+  const normalized = normalizeQuestion({ ...question, answer: 0 }, bankKey, questionIndex);
+  const { answer: _answer, ...publicQuestion } = normalized;
+  return publicQuestion;
+}
+
 export function parseExamHtml(html, filename = 'exam.html') {
   if (typeof html !== 'string') fail('HTML file content must be text');
   if (new TextEncoder().encode(html).byteLength > MAX_EXAM_FILE_BYTES) fail('HTML file exceeds 5 MiB');

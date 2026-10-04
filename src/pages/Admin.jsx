@@ -15,7 +15,7 @@ export default function Admin() {
       '/admin/students': 'الطلاب',
       '/admin/exams': 'الاختبارات',
     };
-    document.title = `${pageLabels[location.pathname] || pageLabels['/admin']} | منصة لغة الكيمياء`;
+    document.title = `${pageLabels[location.pathname] || (location.pathname.startsWith('/admin/exams/') ? 'تفاصيل الاختبار' : pageLabels['/admin'])} | منصة لغة الكيمياء`;
   }, [location.pathname]);
 
   return (

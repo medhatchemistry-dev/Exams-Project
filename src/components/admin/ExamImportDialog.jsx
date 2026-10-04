@@ -3,9 +3,10 @@ import { ArrowLeft, ArrowRight, CheckCircle2, FileText, FileUp, Globe, Loader2, 
 import { supabase } from '@/api/supabaseClient';
 import { GRADE_LABELS, STRUCTURE } from '@/lib/academicStructure';
 import { ACCESS_CODE_LENGTHS, generateAccessCode } from '@/lib/examAccessCode';
-import { parseExamHtml } from '@/lib/examImport';
+import { parseExamHtml, sanitizeExamBanks } from '@/lib/examImport';
 import { getBalancedQuestionCounts, getQuestionGroups, MAX_EXAM_QUESTION_COUNT, selectBalancedQuestions } from '@/lib/examQuestionSelection';
 import { saveExam } from '@/lib/examRepository';
+import ExamPreview from './ExamPreview';
 
 const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 
@@ -14,7 +15,7 @@ function localDateTime(date) {
 }
 
 function Progress({ step }) {
-  const steps = ['مصدر الاختبار', 'الصف والوقت', 'التأكيد'];
+  const steps = ['مصدر الاختبار', 'الصف والوقت', 'المعاينة والنشر'];
   return <ol className="grid grid-cols-3 gap-2" aria-label="خطوات إنشاء الاختبار">
     {steps.map((label, index) => <li key={label} className="flex items-center gap-2 text-xs font-extrabold sm:text-sm" style={{ color: index <= step ? 'var(--mol-cobalt)' : 'var(--mol-muted)' }}>
       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full" style={{ background: index <= step ? 'var(--mol-cobalt-soft)' : 'var(--mol-surface-2)' }}>{index < step ? <CheckCircle2 size={15} /> : index + 1}</span>
@@ -41,6 +42,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [savedExam, setSavedExam] = useState(null);
+  const [reviewQuestions, setReviewQuestions] = useState([]);
   const tracks = grade ? Object.keys(STRUCTURE[grade] || {}) : [];
   const sections = grade && track ? STRUCTURE[grade]?.[track] || [] : [];
   const bankKey = grade && track ? `${grade}-${track}` : '';
@@ -69,6 +71,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
   const acceptFile = async (nextFile) => {
     setFile(nextFile || null);
     setPreview(null);
+    setReviewQuestions([]);
     setError('');
     setSavedExam(null);
     if (!nextFile) return;
@@ -99,6 +102,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
   const inspectUrl = async () => {
     setError('');
     setPreview(null);
+    setReviewQuestions([]);
     let parsedUrl;
     try { parsedUrl = new URL(url.trim()); } catch { setError('أدخل رابطاً كاملاً يبدأ بـ https://.'); return; }
     if (parsedUrl.protocol !== 'https:' || parsedUrl.username || parsedUrl.password) {
@@ -160,21 +164,31 @@ export default function ExamImportDialog({ onClose, onImported }) {
     if (!selectedQuestions.length) { setError('لم أجد أسئلة للاختبار المحدد.'); return; }
     const nextQuestionCount = Math.min(questionCount, selectedQuestions.length, MAX_EXAM_QUESTION_COUNT);
     if (nextQuestionCount < 1) { setError('اختر عدد الأسئلة التي تريد تضمينها.'); return; }
+    const reviewGroups = getQuestionGroups(parsed, bankKey);
+    if (!reviewGroups.length) { setError('لم أستطع تجهيز أسئلة المعاينة.'); return; }
+    setReviewQuestions(selectBalancedQuestions(reviewGroups, nextQuestionCount));
     setQuestionCount(nextQuestionCount);
     if (parsed !== preview) setPreview(parsed);
     setStep(2);
   };
 
   const activate = async () => {
-    setBusy(true);
     setError('');
+    let validatedQuestions;
+    try {
+      validatedQuestions = sanitizeExamBanks({ [bankKey]: reviewQuestions })[bankKey];
+    } catch (validationError) {
+      setError(`تعذر نشر بنك ${bankKey}: ${validationError.message}`);
+      return;
+    }
+    setBusy(true);
     let exam = savedExam;
     try {
       const expiryDate = expiryMode === 'timed' ? new Date(expiresAt) : null;
       if (!exam) {
         const { data: userData, error: authError } = await supabase.auth.getUser();
         if (authError) throw authError;
-        const selectedBanks = { [bankKey]: selectBalancedQuestions(questionGroups, selectedQuestionCount) };
+        const selectedBanks = { [bankKey]: validatedQuestions };
         exam = await saveExam({
           title: title.trim(),
           source_filename: sourceLabel || 'teacher-upload.html',
@@ -272,7 +286,8 @@ export default function ExamImportDialog({ onClose, onImported }) {
         </div>}
 
         {step === 2 && <div className="space-y-4">
-          <div className="mol-card p-5"><p className="text-xs font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>مراجعة قبل التفعيل</p><h4 className="mt-1 text-xl font-extrabold">{title}</h4><p className="mt-2 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{sourceLabel} · {GRADE_LABELS[grade]} · {track} · شعبة {section}</p><p className="mt-4 font-extrabold">{selectedQuestionCount} سؤالاً من أصل {chosenQuestions.length}</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>رمز الدخول: {accessCodeLength} أرقام</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{expiryMode === 'timed' ? `ينتهي ${new Date(expiresAt).toLocaleString('ar')}` : 'يبقى مفتوحاً حتى توقفه يدوياً'}</p></div>
+          <div className="mol-card p-5"><p className="text-xs font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>مراجعة قبل النشر</p><h4 className="mt-1 text-xl font-extrabold">{title}</h4><p className="mt-2 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{sourceLabel} · {GRADE_LABELS[grade]} · {track} · شعبة {section}</p><p className="mt-4 font-extrabold">{reviewQuestions.length} سؤالاً من أصل {chosenQuestions.length}</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>رمز الدخول: {accessCodeLength} أرقام</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{expiryMode === 'timed' ? `ينتهي ${new Date(expiresAt).toLocaleString('ar')}` : 'يبقى مفتوحاً حتى توقفه يدوياً'}</p></div>
+          <ExamPreview questions={reviewQuestions} />
           <p className="rounded-xl p-4 text-sm font-bold" style={{ background: 'var(--mol-amber-soft, var(--mol-surface-2))', color: 'var(--mol-amber)' }}>تفعيل هذا الاختبار يوقف رمز الاختبار النشط الحالي. تستطيع إيقاف الرمز الجديد أو إنهاء الاختبار لاحقاً.</p>
           {savedExam && <p className="font-bold" style={{ color: 'var(--mol-amber)' }}>تم حفظ الاختبار بالفعل. أعد المحاولة لإصدار الرمز دون إنشاء نسخة أخرى.</p>}
         </div>}
@@ -282,7 +297,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
           <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-4 py-2.5" disabled={busy} onClick={() => step ? setStep(step - 1) : onClose()}><ArrowRight size={16} /> {step ? 'السابق' : 'إلغاء'}</button>
           {step === 0 && <button type="button" className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-5 py-2.5" disabled={busy || (!file && !preview)} onClick={continueFromSource}>{busy ? <Loader2 size={16} className="animate-spin" /> : null} متابعة <ArrowLeft size={16} /></button>}
           {step === 1 && <button type="button" className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-5 py-2.5" disabled={busy} onClick={reviewSetup}>مراجعة الاختبار <ArrowLeft size={16} /></button>}
-          {step === 2 && <button type="button" className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-5 py-2.5" disabled={busy} onClick={activate}>{busy ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}{busy ? 'جارٍ التفعيل…' : 'إنشاء الاختبار وتفعيل الرمز'}</button>}
+          {step === 2 && <button type="button" className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-5 py-2.5" disabled={busy || reviewQuestions.length === 0} onClick={activate}>{busy ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}{busy ? 'جارٍ النشر…' : 'نشر الاختبار وإصدار رمز الطلاب'}</button>}
         </footer>
       </section>
     </div>

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Archive, BookOpen, CheckCircle2, Clock3, Loader2, Plus, RefreshCw } from 'lucide-react';
-import { archiveExam, completeExam, listExams } from '@/lib/examRepository';
+import { Archive, BookOpen, CheckCircle2, Clock3, Loader2, Pause, Play, Plus, RefreshCw } from 'lucide-react';
+import { archiveExam, completeExam, listExams, setExamPaused } from '@/lib/examRepository';
 import ExamAccessPanel from './ExamAccessPanel';
 import ExamImportDialog from './ExamImportDialog';
+import { Link } from 'react-router-dom';
 
 function classLabel(exam) {
   if (!exam.target_grade) return 'عدة صفوف';
@@ -57,6 +58,20 @@ export default function ExamsPage() {
     } finally { setSavingId(null); }
   };
 
+  const togglePause = async (exam) => {
+    const pausing = exam.status !== 'paused';
+    setSavingId(exam.id);
+    setError('');
+    try {
+      await setExamPaused(exam.id, pausing);
+      setNotice({ text: pausing ? `تم إيقاف ${exam.title} مؤقتاً. سيبقى الرمز نفسه.` : `تمت إعادة فتح ${exam.title} بالرمز نفسه.`, code: '' });
+      await refresh();
+    } catch (pauseError) {
+      console.error('Exam pause transition failed:', pauseError);
+      setError('تعذر تغيير حالة الاختبار. تحقق من تحديث قاعدة البيانات وصلاحية حساب المعلم.');
+    } finally { setSavingId(null); }
+  };
+
   const activeCount = exams.filter((exam) => exam.status === 'available' && !exam.completed_at).length;
   const completedCount = exams.filter((exam) => exam.completed_at).length;
 
@@ -75,12 +90,26 @@ export default function ExamsPage() {
         {loading ? <div role="status" className="mol-card flex items-center gap-2 p-8 font-bold"><Loader2 size={18} className="animate-spin" /> جارٍ تحميل سجل الاختبارات…</div> : exams.length === 0 ? <div className="mol-card p-10 text-center"><BookOpen size={30} className="mx-auto mb-3" style={{ color: 'var(--mol-muted)' }} /><h3 className="font-extrabold">ابدأ بأول اختبار</h3><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>ارفع بنك أسئلة HTML أو PDF أو الصق رابط صفحة الاختبار.</p><button type="button" className="mol-btn mol-btn-primary mt-5 inline-flex items-center gap-2 px-4 py-2.5" onClick={() => setShowImport(true)}><Plus size={17} /> إنشاء اختبار</button></div> : <div className="grid gap-3 lg:grid-cols-2">{exams.map((exam) => {
           const complete = Boolean(exam.completed_at);
           const archived = exam.status === 'archived';
-          const state = complete ? 'مكتمل' : archived ? 'مؤرشف' : 'جاهز للتفعيل';
-          const iconColor = complete ? 'var(--mol-cobalt)' : archived ? 'var(--mol-muted)' : 'var(--mol-green)';
-          const bgColor = complete ? 'var(--mol-cobalt-soft)' : archived ? 'var(--mol-surface-2)' : 'var(--mol-green-soft)';
+          const paused = exam.status === 'paused';
+          const state = complete ? 'مكتمل' : archived ? 'مؤرشف' : paused ? 'متوقف مؤقتاً' : 'متاح';
+          const iconColor = complete ? 'var(--mol-cobalt)' : archived ? 'var(--mol-muted)' : paused ? 'var(--mol-amber)' : 'var(--mol-green)';
+          const bgColor = complete ? 'var(--mol-cobalt-soft)' : archived ? 'var(--mol-surface-2)' : paused ? 'var(--mol-amber-soft)' : 'var(--mol-green-soft)';
           return <article key={exam.id} className="mol-card flex min-w-0 flex-col justify-between gap-4 p-4 sm:p-5">
             <div className="flex min-w-0 items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl" style={{ background: bgColor, color: iconColor }}><BookOpen size={20} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h4 className="font-extrabold">{exam.title}</h4><span className="rounded-full px-2.5 py-1 text-xs font-extrabold" style={{ background: bgColor, color: iconColor }}>{state}</span></div><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{classLabel(exam)} · {Object.values(exam.banks || {}).reduce((sum, questions) => sum + (Array.isArray(questions) ? questions.length : 0), 0)} سؤال</p><p className="mt-1 truncate text-xs font-bold" title={exam.source_filename} style={{ color: 'var(--mol-muted)' }}>{exam.source_filename} · {new Date(exam.created_at).toLocaleDateString('ar')}</p>{exam.completed_at && <p className="mt-2 inline-flex items-center gap-1 text-xs font-extrabold" style={{ color: 'var(--mol-cobalt)' }}><Clock3 size={13} /> انتهى {new Date(exam.completed_at).toLocaleString('ar')}</p>}</div></div>
-            {!archived && <div className="flex flex-wrap justify-end gap-2 border-t pt-3" style={{ borderColor: 'var(--mol-line-strong)' }}>{!complete && <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm" disabled={savingId === exam.id} onClick={() => finish(exam)}>{savingId === exam.id ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} إنهاء الاختبار</button>}<button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm" disabled={savingId === exam.id} onClick={() => archive(exam)}><Archive size={15} /> أرشفة</button></div>}
+            <div className="flex flex-wrap justify-end gap-2 border-t pt-3" style={{ borderColor: 'var(--mol-line-strong)' }}>
+              <Link to={`/admin/exams/${exam.id}`} className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm">بيانات الاختبار</Link>
+              {!archived && <>
+                {!complete && <>
+                  <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm" disabled={savingId === exam.id} onClick={() => togglePause(exam)}>
+                    {savingId === exam.id ? <Loader2 size={15} className="animate-spin" /> : paused ? <Play size={15} /> : <Pause size={15} />}{paused ? 'إعادة فتح الاختبار' : 'إيقاف مؤقت'}
+                  </button>
+                  <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm" disabled={savingId === exam.id} onClick={() => finish(exam)}>
+                    {savingId === exam.id ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} إنهاء الاختبار
+                  </button>
+                </>}
+                <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2 text-sm" disabled={savingId === exam.id} onClick={() => archive(exam)}><Archive size={15} /> أرشفة</button>
+              </>}
+            </div>
           </article>;
         })}</div>}
       </section>

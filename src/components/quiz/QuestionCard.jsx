@@ -4,7 +4,7 @@ import MathText from './MathText';
 
 const MARKERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-export default function QuestionCard({ q, index, selected, onSelect }) {
+export default function QuestionCard({ q, index, selected, onSelect, disabled = false }) {
   return (
     <div
       id={`q-${index}`}
@@ -51,6 +51,7 @@ export default function QuestionCard({ q, index, selected, onSelect }) {
               type="button"
               key={optIdx}
               className={`reaction-tile ${isSel ? 'is-selected' : ''}`}
+              disabled={disabled}
               onClick={() => onSelect(index, optIdx)}
             >
               <span className="tile-marker">{MARKERS[optIdx] || optIdx + 1}</span>

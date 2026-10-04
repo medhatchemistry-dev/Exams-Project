@@ -30,6 +30,62 @@ Deno.serve(async (request) => {
     const ipHash = Array.from(new Uint8Array(ipDigest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     const admin = createClient(url, secretKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
+    if (body?.action === 'event') {
+      if (typeof body.attemptId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.attemptId)) {
+        return Response.json({ error: 'Invalid attempt' }, { status: 400, headers });
+      }
+      const eventName = body.event;
+      const allowedEvents = ['warning', 'fullscreen_exit', 'tab_hidden', 'window_blur', 'audio_unavailable'];
+      if (!allowedEvents.includes(eventName)) return Response.json({ error: 'Invalid event' }, { status: 400, headers });
+      const signal = body.details?.signal;
+      const { data: attempt, error: attemptError } = await admin.from('exam_attempts')
+        .select('access_code_id').eq('id', body.attemptId).maybeSingle();
+      if (attemptError) throw attemptError;
+      const { data: activeCode, error: codeError } = await admin.from('exam_access_codes')
+        .select('id').eq('id', attempt?.access_code_id).eq('code', code).maybeSingle();
+      if (codeError) throw codeError;
+      if (!attempt || !activeCode) return Response.json({ error: 'Attempt unavailable' }, { status: 404, headers });
+      const { data: eventAllowed, error: rateLimitError } = await admin.rpc('consume_access_attempt', {
+        client_hash: ipHash,
+        attempt_purpose: 'exam_event',
+      });
+      if (rateLimitError) throw rateLimitError;
+      if (!eventAllowed) return Response.json({ error: 'Too many events' }, { status: 429, headers });
+      const { data: warningCount, error: eventError } = await admin.rpc('record_exam_attempt_event', {
+        target_attempt_id: body.attemptId,
+        event_name: eventName,
+        event_details: { signal: ['fullscreen_exit', 'tab_hidden', 'window_blur'].includes(signal) ? signal : null },
+      });
+      if (eventError) throw eventError;
+      return Response.json({ recorded: true, warningCount }, { headers });
+    }
+
+    if (body?.action === 'attempt-state') {
+      if (typeof body.attemptId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.attemptId)) {
+        return Response.json({ error: 'Invalid attempt' }, { status: 400, headers });
+      }
+      const { data: attempt, error: attemptError } = await admin.from('exam_attempts')
+        .select('exam_id, access_code_id, locked_at, warning_count, completed_at')
+        .eq('id', body.attemptId).maybeSingle();
+      if (attemptError) throw attemptError;
+      if (!attempt) return Response.json({ found: false }, { headers });
+      const [{ data: exam, error: examError }, { data: access, error: accessError }] = await Promise.all([
+        admin.from('exams').select('status').eq('id', attempt.exam_id).maybeSingle(),
+        admin.from('exam_access_codes').select('code, is_active, expires_at').eq('id', attempt.access_code_id).maybeSingle(),
+      ]);
+      if (examError) throw examError;
+      if (accessError) throw accessError;
+      if (!access || access.code !== code) return Response.json({ found: false }, { headers });
+      return Response.json({
+        found: true,
+        examStatus: exam?.status ?? 'archived',
+        codeValid: access.is_active && (!access.expires_at || new Date(access.expires_at).getTime() > Date.now()),
+        locked: Boolean(attempt.locked_at),
+        completed: Boolean(attempt.completed_at),
+        warningCount: attempt.warning_count,
+      }, { headers });
+    }
+
     const { data: resolution, error: validationError } = await admin.rpc('resolve_exam_access_code', { candidate: code });
     if (validationError) throw validationError;
     if (!resolution?.valid) {
@@ -39,6 +95,31 @@ Deno.serve(async (request) => {
       if (body?.action === 'submit') return Response.json({ error: 'Exam access code is inactive or expired' }, { status: 409, headers });
     }
     if (body?.action === 'check') return Response.json(resolution ?? { valid: false }, { headers });
+    if (body?.action === 'start') {
+      if (!resolution?.valid || resolution.legacy || !body.student || !Array.isArray(body.questions)) {
+        return Response.json({ error: 'Exam attempt cannot start' }, { status: 409, headers });
+      }
+      const { data: startAllowed, error: startRateLimitError } = await admin.rpc('consume_access_attempt', {
+        client_hash: ipHash,
+        attempt_purpose: 'exam_start',
+      });
+      if (startRateLimitError) throw startRateLimitError;
+      if (!startAllowed) return Response.json({ error: 'Too many attempts started' }, { status: 429, headers });
+      const { data: attemptId, error: startError } = await admin.rpc('start_exam_attempt', {
+        candidate_code: code,
+        student_name_input: body.student.name,
+        student_number_input: body.student.id,
+        grade_input: body.student.grade,
+        track_input: body.student.track,
+        section_input: body.student.section,
+        presented_questions_input: body.questions,
+      });
+      if (startError) {
+        if (startError.code === '22023') return Response.json({ error: startError.message }, { status: 409, headers });
+        throw startError;
+      }
+      return Response.json({ started: true, attemptId, examId: resolution.examId }, { headers });
+    }
     if (body?.action === 'submit') {
       if (resolution.legacy) {
         const { data: bankRecord, error: bankError } = await admin
@@ -80,7 +161,7 @@ Deno.serve(async (request) => {
           examTitle: 'الاختبار الحالي',
         }, { headers });
       }
-      const { data: submitted, error: submitError } = await admin.rpc('submit_exam_attempt', {
+      const { data: submitted, error: submitError } = await admin.rpc('submit_exam_attempt_for_attempt', {
         candidate_code: code,
         student_name_input: body.student?.name,
         student_number_input: body.student?.id,
@@ -92,6 +173,7 @@ Deno.serve(async (request) => {
         submission_time_input: body.submissionTime,
         is_other_input: Boolean(body.student?.isOther),
         is_auto_input: Boolean(body.isAuto),
+        target_attempt_id: body.attemptId,
       });
       if (submitError) {
         if (submitError.code === '22023') return Response.json({ error: submitError.message }, { status: 409, headers });

@@ -6,8 +6,10 @@ import LoginScreen from '@/components/quiz/LoginScreen';
 import QuizScreen from '@/components/quiz/QuizScreen';
 import ResultScreen from '@/components/quiz/ResultScreen';
 import SecurityOverlay from '@/components/quiz/SecurityOverlay';
+import TeacherReentryDialog from '@/components/quiz/TeacherReentryDialog';
 import { AlertModal, TeacherCodeModal } from '@/components/quiz/AlertModal';
 import ExamCodeScreen from '@/components/quiz/ExamCodeScreen';
+import { isDuplicateViolation, nextWarningState } from '@/lib/examSecurity';
 
 const ATTEMPTS_KEY = 'student_attempts';
 
@@ -33,12 +35,20 @@ export default function QuizApp() {
   const [alert, setAlert] = useState({ open: false, title: '', message: '', onConfirm: undefined });
   const [teacherModal, setTeacherModal] = useState(false);
   const [security, setSecurity] = useState({ open: false, warningsLeft: 3 });
+  const [attemptId, setAttemptId] = useState(null);
+  const [attemptLocked, setAttemptLocked] = useState(false);
+  const [examPaused, setExamPaused] = useState(false);
+  const [attemptUnavailable, setAttemptUnavailable] = useState(false);
+  const [browserCapabilities, setBrowserCapabilities] = useState({ fullscreen: null, audio: null });
 
   const warningCount = useRef(0);
   const isSubmitting = useRef(false);
   const alarmCtx = useRef(null);
   const alarmOsc = useRef(null);
   const pendingStudent = useRef(null);
+  const lastViolationAt = useRef(null);
+  const pendingViolationSignal = useRef(null);
+  const audioStartPromise = useRef(null);
   const [accessCode, setAccessCode] = useState('');
 
   // alarm sound (WebAudio beep)
@@ -133,6 +143,42 @@ export default function QuizApp() {
     }
   }, [accessCode]);
 
+  const recordAttemptEvent = useCallback(async (event, details = {}) => {
+    if (!attemptId) return null;
+    const { data, error } = await supabase.functions.invoke('validate-exam-code', {
+      body: { action: 'event', code: accessCode, attemptId, event, details },
+    });
+    if (error) throw error;
+    return data;
+  }, [accessCode, attemptId]);
+
+  const startBrowserCapabilities = useCallback(() => {
+    let fullscreenPromise;
+    try {
+      if (document.fullscreenElement) fullscreenPromise = Promise.resolve(true);
+      else if (document.documentElement.requestFullscreen) {
+        fullscreenPromise = document.documentElement.requestFullscreen().then(() => true).catch(() => false);
+      } else fullscreenPromise = Promise.resolve(false);
+    } catch {
+      fullscreenPromise = Promise.resolve(false);
+    }
+
+    try {
+      if (!alarmCtx.current) {
+        const AudioContextConstructor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
+        if (AudioContextConstructor) alarmCtx.current = new AudioContextConstructor();
+      }
+      audioStartPromise.current = alarmCtx.current
+        ? Promise.resolve(alarmCtx.current.resume()).then(() => alarmCtx.current.state === 'running').catch(() => false)
+        : Promise.resolve(false);
+    } catch {
+      audioStartPromise.current = Promise.resolve(false);
+    }
+
+    fullscreenPromise.then((fullscreen) => setBrowserCapabilities((current) => ({ ...current, fullscreen })));
+    audioStartPromise.current.then((audio) => setBrowserCapabilities((current) => ({ ...current, audio })));
+  }, []);
+
   useEffect(() => {
     if (screen !== 'quiz') return undefined;
 
@@ -140,6 +186,44 @@ export default function QuizApp() {
     const checkAccess = async () => {
       if (checking || isSubmitting.current) return;
       checking = true;
+      if (attemptId) {
+        try {
+          const { data, error } = await supabase.functions.invoke('validate-exam-code', {
+            body: { action: 'attempt-state', code: accessCode, attemptId },
+          });
+          if (error) throw error;
+          if (!data?.found) {
+            checking = false;
+            setAttemptUnavailable(true);
+            return;
+          }
+          let recoveredWarningCount = null;
+          if (pendingViolationSignal.current) {
+            const signal = pendingViolationSignal.current;
+            const { data: eventData, error: eventError } = await supabase.functions.invoke('validate-exam-code', {
+              body: { action: 'event', code: accessCode, attemptId, event: 'warning', details: { signal } },
+            });
+            if (!eventError && eventData?.recorded) {
+              pendingViolationSignal.current = null;
+              warningCount.current = eventData.warningCount;
+              recoveredWarningCount = eventData.warningCount;
+              if (eventData.warningCount >= 3) setAttemptLocked(true);
+              else setSecurity({ open: true, warningsLeft: 3 - eventData.warningCount });
+            }
+          }
+          const paused = data.examStatus === 'paused';
+          const active = data.examStatus === 'available' && data.codeValid && !data.completed;
+          setExamPaused(paused);
+          setAttemptLocked(Boolean(data.locked) || recoveredWarningCount >= 3);
+          setAttemptUnavailable(Boolean(pendingViolationSignal.current) || (!paused && !active && !data.locked));
+          checking = false;
+          return;
+        } catch (error) {
+          checking = false;
+          console.error('Exam attempt state check failed:', error);
+          return;
+        }
+      }
       const stillActive = await isExamCodeActive();
       checking = false;
       if (stillActive || isSubmitting.current) return;
@@ -157,33 +241,57 @@ export default function QuizApp() {
 
     const interval = window.setInterval(checkAccess, 15000);
     return () => window.clearInterval(interval);
-  }, [screen, isExamCodeActive, showAlert, stopAlarm]);
+  }, [screen, isExamCodeActive, showAlert, stopAlarm, attemptId, accessCode]);
 
   // security monitoring (only during quiz)
   useEffect(() => {
     if (screen !== 'quiz') return;
-    const trigger = () => {
+    const trigger = async (signal) => {
       if (isSubmitting.current) return;
-      warningCount.current += 1;
+      const now = Date.now();
+      if (isDuplicateViolation(lastViolationAt.current, now)) return;
+      lastViolationAt.current = now;
+      let nextCount;
+      if (attemptId) {
+        try {
+          const data = await recordAttemptEvent('warning', { signal });
+          nextCount = data.warningCount;
+        } catch (error) {
+          console.error('Could not record exam security event:', error);
+          pendingViolationSignal.current = signal;
+          setAttemptUnavailable(true);
+          showAlert('تعذر تسجيل التنبيه', 'تم إيقاف الإجابة مؤقتاً حتى نتمكن من التحقق من حالة المحاولة.');
+          return;
+        }
+      } else {
+        nextCount = nextWarningState(warningCount.current).warningCount;
+      }
+      warningCount.current = nextCount;
       startAlarm();
-      if (warningCount.current >= 3) {
+      if (nextCount >= 3 && attemptId) {
+        setAttemptLocked(true);
+        stopAlarm();
+      } else if (nextCount >= 3) {
         setSecurity({ open: true, warningsLeft: 0 });
         showAlert('إقصاء', 'تم تسليم الاختبار تلقائياً بسبب تكرار مغادرة نافذة الاختبار!');
         handleSubmit(true);
       } else {
-        setSecurity({ open: true, warningsLeft: 3 - warningCount.current });
+        setSecurity({ open: true, warningsLeft: 3 - nextCount });
       }
     };
-    const onVis = () => document.hidden && trigger();
-    const onBlur = () => trigger();
+    const onVis = () => document.hidden && trigger('tab_hidden');
+    const onBlur = () => trigger('window_blur');
+    const onFullscreen = () => !document.fullscreenElement && trigger('fullscreen_exit');
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('blur', onBlur);
+    document.addEventListener('fullscreenchange', onFullscreen);
     return () => {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('blur', onBlur);
+      document.removeEventListener('fullscreenchange', onFullscreen);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen]);
+  }, [screen, attemptId, recordAttemptEvent, showAlert, startAlarm, stopAlarm]);
 
   const closeSecurity = useCallback(() => {
     stopAlarm();
@@ -217,6 +325,32 @@ export default function QuizApp() {
         examId: selectedBank.examId,
         legacy: Boolean(validatedExam?.legacy),
       });
+      let startedAttemptId = null;
+      if (!validatedExam?.legacy) {
+        const { data, error } = await supabase.functions.invoke('validate-exam-code', {
+          body: { action: 'start', code: accessCode, student: info, questions: exam },
+        });
+        if (error || !data?.started) {
+          showAlert('تعذر بدء المحاولة', data?.error || 'تعذر تسجيل بدء الاختبار. تحقق من الاتصال ثم أعد المحاولة.');
+          return;
+        }
+        startedAttemptId = data.attemptId;
+        const audioReady = await audioStartPromise.current;
+        if (!audioReady) {
+          const { error: eventError } = await supabase.functions.invoke('validate-exam-code', {
+            body: { action: 'event', code: accessCode, attemptId: startedAttemptId, event: 'audio_unavailable' },
+          });
+          if (eventError) console.error('Could not record unavailable audio:', eventError);
+        }
+      }
+      setAttemptId(startedAttemptId);
+      setAttemptLocked(false);
+      setExamPaused(false);
+      setAttemptUnavailable(false);
+      lastViolationAt.current = null;
+      const attempts = readAttempts();
+      attempts[info.id] = 1;
+      localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
       setStudent(info);
       setQuestions(exam);
       setAnswers({});
@@ -225,7 +359,7 @@ export default function QuizApp() {
       setScreen('quiz');
       window.scrollTo({ top: 0 });
     },
-    [banks, isExamCodeActive, showAlert, validatedExam]
+    [banks, isExamCodeActive, showAlert, validatedExam, accessCode]
   );
 
   const handleStart = useCallback(
@@ -240,39 +374,66 @@ export default function QuizApp() {
         setTeacherModal(true);
         return;
       }
-      attempts[info.id] = 1;
-      localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
+      startBrowserCapabilities();
       beginExam(info);
     },
-    [beginExam, showAlert]
+    [beginExam, showAlert, startBrowserCapabilities]
   );
 
   const verifyTeacherCode = useCallback(
     async () => {
+      startBrowserCapabilities();
       const { data: { user } } = await supabase.auth.getUser();
       if (user && await hasTeacherRole(user.id)) {
         setTeacherModal(false);
         const info = pendingStudent.current;
-        const attempts = readAttempts();
-        attempts[info.id] = 1;
-        localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
         showAlert('نجاح', 'تم السماح بمحاولة إضافية بواسطة المعلم. يمكنك بدء المحاولة الآن.');
         beginExam(info);
       } else {
         showAlert('يلزم تسجيل دخول المعلم', 'سجّل الدخول بحساب المعلم المصرّح به من صفحة الإدارة، ثم أعد المحاولة.');
       }
     },
-    [beginExam, showAlert]
+    [beginExam, showAlert, startBrowserCapabilities]
   );
 
   const handleAnswer = useCallback((idx, optIdx) => {
+    if (attemptLocked || examPaused || attemptUnavailable) return;
     setAnswers((a) => ({ ...a, [idx]: optIdx }));
-  }, []);
+  }, [attemptLocked, examPaused, attemptUnavailable]);
+
+  const handleTeacherReentry = useCallback(async (password) => {
+    const { data, error } = await supabase.functions.invoke('verify-exam-reentry', {
+      body: { attemptId, password },
+    });
+    if (error || !data?.unlocked) throw error || new Error(data?.error || 'Unlock rejected');
+    setAttemptLocked(false);
+    setAttemptUnavailable(false);
+    setExamPaused(false);
+    warningCount.current = data.warningCount ?? warningCount.current;
+  }, [attemptId]);
 
   const handleSubmit = useCallback(
     async (auto = false) => {
-      if (isSubmitting.current) return;
-      if (!await isExamCodeActive()) {
+      if (isSubmitting.current || attemptLocked || examPaused || attemptUnavailable) return;
+      let canSubmit = await isExamCodeActive();
+      if (attemptId) {
+        try {
+          const { data, error } = await supabase.functions.invoke('validate-exam-code', {
+            body: { action: 'attempt-state', code: accessCode, attemptId },
+          });
+          if (error) throw error;
+          canSubmit = data?.examStatus === 'available' && data?.codeValid && !data?.locked && !data?.completed;
+          setAttemptLocked(Boolean(data?.locked));
+          setExamPaused(data?.examStatus === 'paused');
+          setAttemptUnavailable(!canSubmit && data?.examStatus !== 'paused' && !data?.locked);
+        } catch (error) {
+          console.error('Could not verify attempt before submission:', error);
+          canSubmit = false;
+          setAttemptUnavailable(true);
+        }
+      }
+      if (!canSubmit) {
+        if (!attemptId) {
         isSubmitting.current = false;
         setScreen('access');
         setStudent(null);
@@ -280,6 +441,7 @@ export default function QuizApp() {
         setAnswers({});
         setAccessCode('');
         showAlert('انتهت صلاحية الرمز', 'أوقف المعلم الاختبار أو انتهت صلاحية الرمز. لم يتم حفظ هذه المحاولة.');
+        }
         return;
       }
       isSubmitting.current = true;
@@ -301,6 +463,7 @@ export default function QuizApp() {
             questions,
             submissionTime,
             isAuto: auto,
+            attemptId,
           },
         });
         if (error || !data?.submitted) {
@@ -319,7 +482,7 @@ export default function QuizApp() {
       setScreen('result');
       window.scrollTo({ top: 0 });
     },
-    [questions, answers, student, stopAlarm, showAlert, isExamCodeActive, validatedExam, accessCode]
+    [questions, answers, student, stopAlarm, showAlert, isExamCodeActive, validatedExam, accessCode, attemptId, attemptLocked, examPaused, attemptUnavailable]
   );
 
   const restart = useCallback(() => {
@@ -332,6 +495,10 @@ export default function QuizApp() {
     setResult(null);
     warningCount.current = 0;
     isSubmitting.current = false;
+    setAttemptId(null);
+    setAttemptLocked(false);
+    setExamPaused(false);
+    setAttemptUnavailable(false);
   }, []);
 
   if (banksError && validatedExam?.legacy) {
@@ -382,6 +549,11 @@ export default function QuizApp() {
           onAnswer={handleAnswer}
           onSubmit={handleSubmit}
           onAlert={showAlert}
+          paused={examPaused}
+          locked={attemptLocked}
+          unavailable={attemptUnavailable}
+          browserCapabilities={browserCapabilities}
+          onRetryCapabilities={startBrowserCapabilities}
         />
       )}
 
@@ -417,6 +589,7 @@ export default function QuizApp() {
       {security.open && (
         <SecurityOverlay warningsLeft={security.warningsLeft} onClose={closeSecurity} />
       )}
+      {attemptLocked && !examPaused && <TeacherReentryDialog onSubmit={handleTeacherReentry} />}
     </div>
   );
 }

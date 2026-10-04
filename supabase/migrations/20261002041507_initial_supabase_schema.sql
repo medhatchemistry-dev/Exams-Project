@@ -1,3 +1,21 @@
+-- PostgreSQL provides jsonb_object_keys(), but not jsonb_object_length().
+-- Keep the migration chain's object-size checks portable across clean installs.
+create or replace function public.jsonb_object_length(value jsonb)
+returns integer
+language sql
+immutable
+parallel safe
+set search_path = pg_catalog
+as $function$
+  select count(*)::integer
+  from pg_catalog.jsonb_object_keys(
+    case
+      when pg_catalog.jsonb_typeof(value) = 'object' then value
+      else '{}'::pg_catalog.jsonb
+    end
+  );
+$function$;
+
 create table public.teacher_roles (
   user_id uuid primary key references auth.users (id) on delete cascade,
   created_at timestamptz not null default now()

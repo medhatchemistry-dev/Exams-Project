@@ -49,3 +49,4 @@ b9aa24e00_source-code.zip
 
 # Supabase local project metadata may include credentials.
 /.supabase/
+supabase/.temp/

@@ -26,7 +26,7 @@ test('selects the matching imported exam bank without falling back to another gr
 test('re-sanitizes a stored imported bank and removes answer keys before student rendering', () => {
   const dirtyValidation = {
     legacy: false,
-    banks: { '10-متقدم': [{ qAr: '<img src="x" onerror="alert(1)">سؤال', options: [{ ar: 'أ' }, { ar: 'ب' }], answer: 0 }] },
+    banks: { '10-متقدم': [{ id: 'dirty-question', qAr: '<img src="x" onerror="alert(1)">سؤال', options: [{ ar: 'أ' }, { ar: 'ب' }], answer: 0 }] },
   };
   const selected = selectExamBank(dirtyValidation, '10', 'متقدم', {});
   assert.doesNotMatch(selected.questions[0].qAr, /onerror/i);

@@ -9,13 +9,15 @@ function fmt(s) {
   return `${m}:${sec < 10 ? '0' : ''}${sec}`;
 }
 
-export default function QuizScreen({ student, examTitle, questions, answers, onAnswer, onSubmit, onAlert }) {
+export default function QuizScreen({ student, examTitle, questions, answers, onAnswer, onSubmit, onAlert, onRetryCapabilities, paused = false, locked = false, unavailable = false, browserCapabilities = { fullscreen: null, audio: null } }) {
   const [timeLeft, setTimeLeft] = useState(45 * 60);
   const [current, setCurrent] = useState(0);
   const timerRef = useRef(null);
   const warned = useRef({ 30: false, 15: false });
+  const active = !paused && !locked && !unavailable;
 
   useEffect(() => {
+    if (!active) return undefined;
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
         const nt = t - 1;
@@ -36,7 +38,7 @@ export default function QuizScreen({ student, examTitle, questions, answers, onA
     }, 1000);
     return () => clearInterval(timerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [active]);
 
   const lowTime = timeLeft <= 5 * 60;
 
@@ -73,6 +75,7 @@ export default function QuizScreen({ student, examTitle, questions, answers, onA
           </div>
           <button
             className="mol-btn mol-btn-ghost px-3 py-2 text-sm inline-flex items-center gap-1.5"
+            disabled={!active}
             onClick={() => onAlert('تأكيد التسليم', 'هل أنت متأكد؟ سيتم تسليم الاختبار نهائياً.', () => onSubmit(false))}
           >
             <LogOut size={16} /> <span className="hidden md:inline">تسليم</span>
@@ -80,11 +83,18 @@ export default function QuizScreen({ student, examTitle, questions, answers, onA
         </div>
       </div>
 
+      <div className="mol-card mb-4 p-3 text-sm font-bold" style={{ color: active ? 'var(--mol-muted)' : 'var(--mol-amber)' }} role="status">
+        {paused ? 'أوقف المعلم الاختبار مؤقتاً. ستبقى إجاباتك محفوظة هنا حتى إعادة فتحه.'
+          : locked ? 'المحاولة مقفلة. أدخل كلمة مرور المعلم للمتابعة؛ لم يتم تسليم إجاباتك.'
+            : unavailable ? 'تعذر التحقق من حالة المحاولة. الإجابة والتسليم متوقفان مؤقتاً.'
+              : <>{`ملء الشاشة: ${browserCapabilities.fullscreen === null ? 'جارٍ التحقق' : browserCapabilities.fullscreen ? 'مفعّل' : 'غير متاح'} · صوت التنبيه: ${browserCapabilities.audio === null ? 'جارٍ التحقق' : browserCapabilities.audio ? 'جاهز' : 'غير متاح'}. يحتاج ملء الشاشة والصوت إلى دعم المتصفح، ولا يتحكم الموقع بصوت الجهاز أو كل اختصاراته.`}{(browserCapabilities.fullscreen === false || browserCapabilities.audio === false) && <button type="button" className="mol-btn mol-btn-ghost ms-3 px-3 py-1.5" onClick={onRetryCapabilities}>إعادة المحاولة</button>}</>}
+      </div>
+
       <NavGrid total={questions.length} answers={answers} current={current} onJump={jump} />
 
       <div className="space-y-5">
         {questions.map((q, i) => (
-          <QuestionCard key={i} q={q} index={i} selected={answers[i]} onSelect={handleAnswer} />
+          <QuestionCard key={i} q={q} index={i} selected={answers[i]} onSelect={handleAnswer} disabled={!active} />
         ))}
       </div>
 
@@ -95,6 +105,7 @@ export default function QuizScreen({ student, examTitle, questions, answers, onA
         <div>
           <button
             className="mol-btn mol-btn-primary px-10 py-4 text-lg"
+            disabled={!active}
             onClick={() => onSubmit(false)}
           >
             تسليم الاختبار النهائي

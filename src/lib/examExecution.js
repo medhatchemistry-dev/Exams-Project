@@ -1,14 +1,21 @@
-import { sanitizeExamBanks } from './examImport.js';
+import { sanitizePublicExamQuestion } from './examImport.js';
 
 export function selectExamBank(validation, grade, track, legacyBanks = {}) {
-  const banks = validation?.legacy ? legacyBanks : sanitizeExamBanks(validation?.banks);
+  const banks = validation?.legacy ? legacyBanks : validation?.banks;
   if (!banks || typeof banks !== 'object') throw new Error('بيانات الاختبار غير متاحة. أعد التحقق من الرمز.');
   const bankKey = `${grade}-${track}`;
   const questions = banks[bankKey];
   if (!Array.isArray(questions) || questions.length === 0) {
     throw new Error(`لا يحتوي الاختبار على أسئلة للصف ${grade} والمسار ${track}.`);
   }
-  const studentQuestions = questions.map(({ answer: _answer, ...question }) => question);
+  const studentQuestions = questions.map((question, index) => {
+    if (!question || typeof question !== 'object' || Array.isArray(question)
+      || typeof question.id !== 'string' || !question.id.trim()
+      || !Array.isArray(question.options) || question.options.length < 2) {
+      throw new Error(`${bankKey}, question ${index + 1}: بيانات السؤال غير صالحة.`);
+    }
+    return sanitizePublicExamQuestion(question, bankKey, index);
+  });
   return { bankKey, questions: studentQuestions, examId: validation?.legacy ? null : validation.examId ?? null, examTitle: validation?.examTitle ?? null };
 }
 

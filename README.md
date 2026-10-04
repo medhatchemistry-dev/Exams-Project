@@ -72,34 +72,51 @@ Database schema and row-level security policies are versioned in `supabase/migra
 
 ### Apply database migrations
 
-Install and authenticate the [Supabase CLI](https://supabase.com/docs/guides/cli). This repository has migrations and functions under `supabase/` but does not currently include a CLI `config.toml`, so initialize the local Supabase project configuration first:
+Install and authenticate the [Supabase CLI](https://supabase.com/docs/guides/cli). This repository has migrations and functions under `supabase/` but does not currently include a CLI `config.toml`.
+
+#### Separate targets while the lifecycle work is in progress
+
+The `dev` and `master` checkouts use separate Supabase projects:
+
+- `dev`: `eybupykryqjgjvcbwsqi`
+- `master` (isolated project): `sbgohdehpkjfsktgdzjj`
+
+The local `.env.local` targets `master`. No student or teacher data was copied to that project. Its schema and lifecycle migration are applied, and all four Edge Functions are deployed. The teacher password hash and Jev API key were not copied, so those features need their environment-specific setup before use.
+
+Supabase CLI's linked-project setting is local to the checkout; it does not follow Git branch changes. For remote commands, always pass the intended project's ref explicitly. Do not use `--linked` by itself.
+
+Keep Git branches in separate worktrees when using local Supabase settings: ignored `.env.local` and `supabase/.temp/` files remain attached to a directory when Git switches branches. The primary checkout for this work is `master` and points to the isolated master project; use a separate `dev` worktree for the dev project.
 
 ```bash
 supabase login
-supabase init
-supabase link --project-ref YOUR_PROJECT_REF
-supabase migration list --linked
-supabase db push --linked --dry-run
-supabase db push --linked
+pwsh ./scripts/supabase-master-db-push.ps1 # dry-run against isolated master
+pwsh ./scripts/supabase-master-db-push.ps1 -Apply
 ```
 
-Review the pending migration list and dry-run output before applying migrations to a project with existing data. `db push` applies the checked-in migration versions. Do not create replacement timestamps or manually edit the remote migration history. You can also apply SQL through the Supabase dashboard, but record the exact checked-in migration version through the supported migration workflow.
+Review the pending migration list and dry-run output before applying migrations. `db push` applies the checked-in migration versions. Do not create replacement timestamps or manually edit the remote migration history. You can also apply SQL through the Supabase dashboard, but record the exact checked-in migration version through the supported migration workflow.
+
+The master migration helper uses the explicit master ref and reads its database password from the current Windows user's DPAPI-protected local file. For any other project, supply that project's full ref explicitly; Git branch switches do not update Supabase CLI's local link.
+
+When migrations change on GitHub `master`, `.github/workflows/deploy-master-database.yml` applies them to the isolated `exams-master` project (`sbgohdehpkjfsktgdzjj`). The GitHub repository secret `SUPABASE_DB_PASSWORD` contains that project's database password. The workflow has a fixed project ref and runs only for `master`; it cannot apply migrations to `dev`.
 
 ### Deploy Edge Functions
 
-The app calls three functions:
+The app calls four functions:
 
 - `validate-exam-code` checks that a student-provided code is active and has not expired.
 - `teacher-login` verifies the teacher password, applies rate limiting, and creates the teacher Auth session.
 - `jev-import-assist` maps unfamiliar student spreadsheet column labels. It requires a signed-in teacher and sends only header labels and unmapped field names to the server-side Jev request; roster rows never go to Jev.
+- `verify-exam-reentry` checks the existing teacher password and unlocks only the specified locked attempt; it does not create an Auth session.
 
-Deploy the functions you use to the linked project:
+Imported exam files use deterministic HTML/PDF parsing and teacher review. Jev's `jev-latest` API accepts bounded structured decision questions, not exam files or a reliable question-bank parser, so this workflow does not send exam content to Jev or use it to create questions, answer keys, or publication state. Roster header mapping remains the only Jev-assisted workflow.
+
+Deploy the functions you use to the explicitly selected project:
 
 ```bash
-supabase functions deploy validate-exam-code
-supabase functions deploy teacher-login
-supabase functions deploy jev-import-assist
+pwsh ./scripts/supabase-master-deploy-functions.ps1
 ```
+
+Keep project refs explicit for every migration and function deployment so switching Git branches cannot redirect a database change.
 
 Set `EXPERIENTIAL_API_KEY` in the Supabase project's Edge Function secrets before using Jev header mapping. The `jev-import-assist` function reads it with `Deno.env.get` and calls `jev-latest` through the Experiential Labs `/v1/systemone` endpoint. Keep this key server-side; never add it to a `VITE_` variable, frontend code, or Git. If the key is unavailable or Jev cannot classify a header confidently, the student import retains its deterministic header mapping and review flow.
 
@@ -115,7 +132,15 @@ The functions allow local development and the legacy `exams-project*.vercel.app`
 supabase secrets set APP_ALLOWED_ORIGINS="https://chemistry-khalid.vercel.app" --project-ref eybupykryqjgjvcbwsqi
 ```
 
-Use an origin only (`https://hostname`), with no path or trailing slash. Do not use `*`, all of `vercel.app`, or a hostname belonging to another site. After a domain change, update this secret for the correct Supabase project. The same origin check is used by `teacher-login`, `validate-exam-code`, and `jev-import-assist`.
+Use an origin only (`https://hostname`), with no path or trailing slash. Do not use `*`, all of `vercel.app`, or a hostname belonging to another site. After a domain change, update this secret for the correct Supabase project. The same origin check is used by `teacher-login`, `validate-exam-code`, `verify-exam-reentry`, and `jev-import-assist`.
+
+### Exam attempt security and browser limits
+
+Teachers can preview an imported exam before publishing its access code, then pause and resume the exam with the same code. A pause blocks joins and submissions and extends a timed code by the pause duration. Existing student answers stay in the active browser session while the exam is paused or a teacher verifies a locked attempt.
+
+For imported exam attempts, the third recorded visibility, window-blur, or fullscreen-exit warning locks the attempt without auto-submitting it. Re-entry checks the teacher password on the server, binds the unlock to that attempt, and rate-limits retries. Student activity events use server timestamps, but browser signals can be incomplete or forged and are not standalone proof of misconduct.
+
+The student start action requests fullscreen and resumes the page's warning audio where supported. Browsers may deny either request, and students can exit fullscreen. The app cannot control operating-system volume or detect every browser or operating-system shortcut. It reports browser capability and offers a retry where supported.
 
 ## Project structure
 
