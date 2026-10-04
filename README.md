@@ -97,7 +97,7 @@ Review the pending migration list and dry-run output before applying migrations.
 
 The master migration helper uses the explicit master ref and reads its database password from the current Windows user's DPAPI-protected local file. For any other project, supply that project's full ref explicitly; Git branch switches do not update Supabase CLI's local link.
 
-When migrations change on GitHub `master`, `.github/workflows/deploy-master-database.yml` applies them to the isolated `exams-master` project (`sbgohdehpkjfsktgdzjj`). The GitHub repository secret `SUPABASE_DB_PASSWORD` contains that project's database password. The workflow has a fixed project ref and runs only for `master`; it cannot apply migrations to `dev`.
+When migrations change on GitHub `master`, `.github/workflows/deploy-master-database.yml` applies them to the isolated `exams-master` project (`sbgohdehpkjfsktgdzjj`). The GitHub repository secret `SUPABASE_DB_URL` holds that project's session-pooler connection string. The workflow has a fixed master-only database URL and runs only for `master`; it cannot apply migrations to `dev`.
 
 ### Deploy Edge Functions
 

@@ -31,8 +31,6 @@ jobs:
 
       - name: Apply master migrations
         env:
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: >-
-          supabase db push
-          --project-ref sbgohdehpkjfsktgdzjj
-          --password "$SUPABASE_DB_PASSWORD"
+          supabase db push --db-url "$SUPABASE_DB_URL"
