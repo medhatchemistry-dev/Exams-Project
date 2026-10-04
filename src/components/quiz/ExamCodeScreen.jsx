@@ -68,7 +68,7 @@ export default function ExamCodeScreen({ onContinue }) {
           </button>
         </form>
         <div className="mt-6 flex items-center justify-between gap-3 border-t pt-5 text-sm font-bold" style={{ borderColor: 'var(--mol-line-strong)', color: 'var(--mol-muted)' }}>
-          <span>المدة: 45 دقيقة · 25 سؤالاً</span>
+          <span>المدة: 45 دقيقة</span>
           <Link to="/admin" className="hover:underline" style={{ color: 'var(--mol-cobalt)' }}>دخول المعلم</Link>
         </div>
       </section>

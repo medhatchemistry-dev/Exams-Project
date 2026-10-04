@@ -59,7 +59,7 @@ export default function LoginScreen({ onStart, targetClass = null }) {
         <StudentPicker onStart={onStart} targetClass={targetClass} />
 
         <p className="text-center text-xs font-bold mt-6" style={{ color: 'var(--mol-muted)' }}>
-          <MathText>المدة: 45 دقيقة • 25 سؤالاً • مراقبة أمنية تلقائية</MathText>
+          <MathText>المدة: 45 دقيقة • مراقبة أمنية تلقائية</MathText>
         </p>
       </div>
     </div>
