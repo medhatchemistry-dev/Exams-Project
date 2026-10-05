@@ -136,7 +136,7 @@ The password is a database value, not a Supabase project password or a website b
 pwsh ./scripts/reset-master-teacher-password.ps1
 ```
 
-To have the helper generate a strong one-time password instead, run `pwsh ./scripts/reset-master-teacher-password.ps1 -Generate` and save the password it prints. Never commit that value. The existing auth identity is synchronized to the new password on first login.
+To have the helper generate a strong random password instead, run `pwsh ./scripts/reset-master-teacher-password.ps1 -Generate` and save the password it prints. Never commit that value. The existing auth identity is synchronized to the new password on first login.
 
 ### Production teacher login and allowed origins
 
