@@ -9,9 +9,12 @@ The app uses React, Vite, and Supabase. The earlier Base44 version is preserved 
 - Student quiz flow with grade, track, section, and roster selection.
 - Manual student entry when a name is not listed.
 - Time-limited or open-ended exam access codes managed by teachers.
-- Class-assigned exam imports from structured HTML or text PDFs, with an exam history and completion workflow.
+- Teacher exam revisions and duration settings, plus pause, resume, archive, and restore workflows that preserve history.
+- Autosaved student answers and attempt recovery on the same device, including while a teacher has paused an exam.
+- Exam imports from PDFs, structured HTML, and public HTTPS websites, with images and teacher review.
+- Bilingual Arabic and English answer choices, with editable translations and math typesetting for chemistry formulas.
 - Question and answer shuffling, exam security prompts, and result submission.
-- Exam-based grade review, student answer details, CSV export, certificates, and source access.
+- Exam-based grade review, student answer details, PDF reports, class grade exports, certificates, and source access.
 - Bilingual student roster imports with flexible spreadsheet headers and optional server-side Jev header mapping.
 - Supabase Auth, role-protected teacher features, database row-level security, and Edge Functions.
 
@@ -74,14 +77,16 @@ Database schema and row-level security policies are versioned in `supabase/migra
 
 Install and authenticate the [Supabase CLI](https://supabase.com/docs/guides/cli). This repository has migrations and functions under `supabase/` but does not currently include a CLI `config.toml`.
 
-#### Separate targets while the lifecycle work is in progress
+#### Supabase targets and current connection
 
 The `dev` and `master` checkouts use separate Supabase projects:
 
 - `dev`: `eybupykryqjgjvcbwsqi`
 - `master` (isolated project): `sbgohdehpkjfsktgdzjj`
 
-The local `.env.local` targets `master`. No student or teacher data was copied to that project. Its schema and lifecycle migration are applied, and all four Edge Functions are deployed. The teacher password hash and Jev API key were not copied, so those features need their environment-specific setup before use.
+This checkout's `.env.local` and the published `https://chemistry-khalid.vercel.app` bundle currently target `master`. The Supabase CLI login used for this checkout can access `master`; it does not currently have access to the separate `dev` project. Confirm the project reference before changing a database or deploying functions.
+
+As of 2026-10-05, the latest schema migration and all five Edge Functions are deployed to `master`. The main website origin passes the function CORS preflight. The database already has a teacher role and password hash, but a password hash cannot be read back or recovered. If the current teacher password is unknown, reset it with the secure helper below.
 
 Supabase CLI's linked-project setting is local to the checkout; it does not follow Git branch changes. For remote commands, always pass the intended project's ref explicitly. Do not use `--linked` by itself.
 
@@ -97,11 +102,11 @@ Review the pending migration list and dry-run output before applying migrations.
 
 The master migration helper uses the explicit master ref and reads its database password from the current Windows user's DPAPI-protected local file. For any other project, supply that project's full ref explicitly; Git branch switches do not update Supabase CLI's local link.
 
-When migrations change on GitHub `master`, `.github/workflows/deploy-master-database.yml` applies them to the isolated `exams-master` project (`sbgohdehpkjfsktgdzjj`). The GitHub repository secret `SUPABASE_DB_URL` holds that project's session-pooler connection string. The workflow has a fixed master-only database URL and runs only for `master`; it cannot apply migrations to `dev`.
+When migrations change on GitHub `master`, `.github/workflows/deploy-master-database.yml` applies them to `exams-master` (`sbgohdehpkjfsktgdzjj`). The GitHub repository secret `SUPABASE_DB_URL` holds that project's session-pooler connection string. The workflow has a fixed master-only database URL and runs only for `master`; it cannot apply migrations to `dev`.
 
 ### Deploy Edge Functions
 
-The app calls four functions:
+The app calls five functions:
 
 - `validate-exam-code` checks that a student-provided code is active and has not expired.
 - `teacher-login` verifies the teacher password, applies rate limiting, and creates the teacher Auth session.
@@ -121,16 +126,26 @@ Keep project refs explicit for every migration and function deployment so switch
 
 Set `EXPERIENTIAL_API_KEY` in the Supabase project's Edge Function secrets before using Jev header mapping. The `jev-import-assist` function reads it with `Deno.env.get` and calls `jev-latest` through the Experiential Labs `/v1/systemone` endpoint. Keep this key server-side; never add it to a `VITE_` variable, frontend code, or Git. If the key is unavailable or Jev cannot classify a header confidently, the student import retains its deterministic header mapping and review flow.
 
-All functions use server-side Supabase secrets. Never expose a service-role/secret key, teacher password, or password hash in the frontend, repository, or Git history. The teacher password hash is stored in the single allowed row of `public.teacher_login_passwords` and checked server-side. `teacher-login` uses `TEACHER_LOGIN_EMAIL` when configured; otherwise it uses the default email in the function source, then creates or updates the matching Auth identity after password verification.
+All functions use server-side Supabase secrets. Never expose a service-role/secret key, teacher password, or password hash in the frontend, repository, or Git history. The teacher password hash is stored in `public.teacher_login_passwords` and checked server-side. `teacher-login` uses `TEACHER_LOGIN_EMAIL` when configured; otherwise it uses the default email in the function source, then creates or updates the matching Auth identity after password verification.
+
+#### Reset the teacher password
+
+The password is a database value, not a Supabase project password or a website build variable. To choose a new password for `exams-master`, run this from the linked checkout. The helper verifies the linked project, prompts without echoing the password, updates only its hash, and verifies the login endpoint:
+
+```powershell
+pwsh ./scripts/reset-master-teacher-password.ps1
+```
+
+To have the helper generate a strong one-time password instead, run `pwsh ./scripts/reset-master-teacher-password.ps1 -Generate` and save the password it prints. Never commit that value. The existing auth identity is synchronized to the new password on first login.
 
 ### Production teacher login and allowed origins
 
-The teacher password is verified against the hash in the connected Supabase database; it is not configured in this repository or in the website's build variables. If the password is accepted by `public.verify_teacher_password` but the browser still cannot log in, check the Edge Function logs for a rejected `OPTIONS` preflight. A `403` at that stage means the production website origin is not allowed, and the password has not been checked.
+The teacher password is verified against the hash in the connected Supabase database. The login screen distinguishes a rejected password (`401`), a temporary rate limit (`429`), and a connection/service error. If a known password is rejected, use the reset helper above. If login still fails for another reason, check the Edge Function logs for a rejected `OPTIONS` preflight; a `403` means the browser origin is not allowed and the password has not been checked.
 
 The functions allow local development and the legacy `exams-project*.vercel.app` origins. The current main production site is `https://chemistry-khalid.vercel.app`; its exact origin is configured in the Exams Supabase project. For any custom production hostname, configure the exact HTTPS origin in the Supabase Edge Function secret `APP_ALLOWED_ORIGINS` (comma-separated when multiple origins are needed):
 
 ```bash
-supabase secrets set APP_ALLOWED_ORIGINS="https://chemistry-khalid.vercel.app" --project-ref eybupykryqjgjvcbwsqi
+supabase secrets set APP_ALLOWED_ORIGINS="https://chemistry-khalid.vercel.app" --project-ref sbgohdehpkjfsktgdzjj
 ```
 
 Use an origin only (`https://hostname`), with no path or trailing slash. Do not use `*`, all of `vercel.app`, or a hostname belonging to another site. After a domain change, update this secret for the correct Supabase project. The same origin check is used by `teacher-login`, `validate-exam-code`, `verify-exam-reentry`, and `jev-import-assist`.
@@ -154,8 +169,10 @@ src/
 public/
   question-bank.html     Bundled chemistry question bank
 supabase/
-  functions/             Exam-code validation, teacher-login, and Jev import assistance
+  functions/             Exam validation, teacher login, source import, and Jev assistance
   migrations/            Database schema, policies, and security changes
+scripts/
+  reset-master-teacher-password.ps1  Secure teacher password reset and login check
 ```
 
 ## Quality checks

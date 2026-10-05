@@ -22,7 +22,14 @@ export default function AdminLogin() {
       if (sessionError) throw sessionError;
     } catch (err) {
       console.error('Teacher sign-in failed:', err);
-      setError('كلمة المرور غير صحيحة أو تعذر الاتصال بخدمة الدخول. حاول مرة أخرى.');
+      const status = err?.context?.status ?? err?.status;
+      if (status === 401) {
+        setError('كلمة المرور غير صحيحة.');
+      } else if (status === 429) {
+        setError('تم إيقاف محاولات الدخول مؤقتًا بسبب تكرار المحاولة. حاول لاحقًا.');
+      } else {
+        setError('تعذر الاتصال بخدمة الدخول. حاول مرة أخرى.');
+      }
     } finally {
       setLoading(false);
     }
