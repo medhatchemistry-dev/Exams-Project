@@ -1,12 +1,13 @@
 # Exam Usability and Teacher Workflows Implementation Plan
 
-> Editable execution plan. Implementation is complete on `codex/exam-usability-and-teacher-workflows`; use the unchecked verification items to track the remaining live Supabase and browser review.
+> Editable execution plan. The implementation is on `dev-2` (starting at commit `2b34b90`). The remaining unchecked items need a browser-based end-to-end pass; this task was kept to Git/GitHub CLI and Supabase CLI as requested.
 
 ## Current status
 
 - Code checks passed: `npm run lint`, `npm run typecheck`, and `npm run build`.
-- The Supabase CLI dry-run confirmed this migration is pending and would be applied. No migration or Edge Function was deployed, and no paid preview branch was created.
-- Browser end-to-end flows and live database RPC behavior still need verification in an approved Supabase environment.
+- The linked `exams-master` project has the latest migration applied; `supabase db push` dry-run reports no pending migrations. All five Edge Functions are active.
+- CLI checks confirm the exam revision/attempt tables and teacher role/password-hash records exist. The secure teacher-password reset helper verified a live login session.
+- The latest `dev-2` GitHub check reported Vercel success. Browser end-to-end flows remain unverified because this run was restricted to CLI access.
 
 ## Goal
 
@@ -91,8 +92,8 @@ Improve exam editing, student recovery, question presentation, imports, result e
 - [x] Use the supplied icon art for favicon, PWA, Apple touch, and in-app references while containing the unchanged silhouette.
 - [ ] Verify the complete teacher flow: import HTML/PDF/hosted page → review/edit/translate → publish → edit/re-publish → archive/restore → export class grades.
 - [ ] Verify the student flow: configured/no timer → answer autosave → refresh/device return → pause/resume → lock/re-entry → submit → report PDF → permanent close clears only unfinished drafts.
-- [x] Run `npm run lint`, `npm run typecheck`, `npm run build`, and the Supabase CLI migration dry-run. No Supabase migration or function deployment was performed.
-- [ ] Apply the migration and verify schema/RLS/RPC behavior against an approved development Supabase project before any deployment.
+- [x] Run `npm run lint`, `npm run typecheck`, `npm run build`, and the Supabase CLI migration dry-run.
+- [x] Confirm the latest migration, core tables, and RPC grants/definitions on the linked `exams-master` project. No schema write was needed; role-level RPC integration tests remain pending.
 
 **Acceptance:** Audio capability is represented accurately and never promises to defeat mute. All site and PWA icon references use the supplied artwork without changing its silhouette. Existing legacy exam and result paths continue working.
 
@@ -111,3 +112,10 @@ Improve exam editing, student recovery, question presentation, imports, result e
 - **Translation quality:** chemistry translations can change scientific meaning. Use teacher-reviewed English text and keep the original Arabic; any automatic suggestions must remain unpublished until approved.
 - **Hosted imports:** only static HTML and supported image assets are parsed. Pages whose questions only appear after arbitrary JavaScript runs still need a static export or an explicit data source.
 - **Data retention:** permanently closing an exam deletes unfinished answer drafts only. Submitted answers/grades are retained for historical reporting; deletion of submitted records would require a separate retention policy.
+
+## CLI security review
+
+- The Supabase security advisor reports six `SECURITY DEFINER` RPCs executable by `authenticated`. The reviewed functions grant no access to `anon`/`PUBLIC`, pin an empty `search_path`, and check the caller against `auth.uid()` and `teacher_roles`; these warnings need role-level integration tests, but do not indicate an anonymous teacher-control path.
+- Supabase Auth's leaked-password protection is disabled. Enabling it requires an Auth security configuration change; it was not changed in this CLI-only pass.
+- `npm audit --omit=dev --audit-level=high` reports nine dependency advisories (five high, four moderate), including `braces` via Tailwind CSS, React Router, and `uuid` via ExcelJS. The suggested `--force` remediation makes major-version changes, so no automatic dependency upgrade was applied.
+- Hosted website import checks DNS answers, redirects, schemes, file types, and response-size limits. DNS is checked before `fetch`; because the outbound fetch does not pin the validated IP, DNS rebinding remains a residual SSRF hardening concern for a later network-level fix.
