@@ -9,6 +9,7 @@
 - The linked `exams-master` project has the latest migration applied; `supabase db push` dry-run reports no pending migrations. All five Edge Functions are active.
 - CLI checks confirm the exam revision/attempt tables and teacher role/password-hash records exist. The secure teacher-password reset helper verified a live login session.
 - A read-only live attempt-state request using a synthetic attempt ID returned the expected `found: false` response.
+- A read-only check of an existing active exam code returned `valid: true`; no student attempt or result was created.
 - The latest `dev-2` GitHub check reported Vercel success. Browser end-to-end flows remain unverified because this run was restricted to CLI access.
 
 ## Goal
