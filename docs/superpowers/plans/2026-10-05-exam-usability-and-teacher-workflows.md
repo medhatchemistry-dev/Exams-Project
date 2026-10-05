@@ -5,8 +5,10 @@
 ## Current status
 
 - Code checks passed: `npm run lint`, `npm run typecheck`, and `npm run build`.
+- The Node test suite passed all 70 tests, including exam lifecycle, import sanitization, answer-key protection, and security contracts.
 - The linked `exams-master` project has the latest migration applied; `supabase db push` dry-run reports no pending migrations. All five Edge Functions are active.
 - CLI checks confirm the exam revision/attempt tables and teacher role/password-hash records exist. The secure teacher-password reset helper verified a live login session.
+- A read-only live attempt-state request using a synthetic attempt ID returned the expected `found: false` response.
 - The latest `dev-2` GitHub check reported Vercel success. Browser end-to-end flows remain unverified because this run was restricted to CLI access.
 
 ## Goal
@@ -92,7 +94,7 @@ Improve exam editing, student recovery, question presentation, imports, result e
 - [x] Use the supplied icon art for favicon, PWA, Apple touch, and in-app references while containing the unchanged silhouette.
 - [ ] Verify the complete teacher flow: import HTML/PDF/hosted page → review/edit/translate → publish → edit/re-publish → archive/restore → export class grades.
 - [ ] Verify the student flow: configured/no timer → answer autosave → refresh/device return → pause/resume → lock/re-entry → submit → report PDF → permanent close clears only unfinished drafts.
-- [x] Run `npm run lint`, `npm run typecheck`, `npm run build`, and the Supabase CLI migration dry-run.
+- [x] Run `npm run lint`, `npm run typecheck`, `npm run build`, `node --test tests/*.test.js`, and the Supabase CLI migration dry-run.
 - [x] Confirm the latest migration, core tables, and RPC grants/definitions on the linked `exams-master` project. No schema write was needed; role-level RPC integration tests remain pending.
 
 **Acceptance:** Audio capability is represented accurately and never promises to defeat mute. All site and PWA icon references use the supplied artwork without changing its silhouette. Existing legacy exam and result paths continue working.
