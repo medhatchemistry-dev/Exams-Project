@@ -55,13 +55,11 @@ export default function QuestionCard({ q, index, selected, onSelect, disabled = 
               onClick={() => onSelect(index, optIdx)}
             >
               <span className="tile-marker">{MARKERS[optIdx] || optIdx + 1}</span>
-              <span className="flex-1">
-                <span className="block font-extrabold"><MathText>{opt.ar}</MathText></span>
-                {opt.en && (
-                  <span className="block text-sm font-semibold mt-0.5" style={{ color: 'var(--mol-muted)', direction: 'ltr', textAlign: 'right' }}>
-                    <MathText>{opt.en}</MathText>
-                  </span>
-                )}
+              <span className="option-translations flex-1" dir="ltr">
+                <span className="option-english text-left text-sm font-semibold" dir="ltr" style={{ color: 'var(--mol-muted)' }}>
+                  {opt.en ? <MathText>{opt.en}</MathText> : <span className="italic">English translation unavailable</span>}
+                </span>
+                <span className="option-arabic text-right font-extrabold" dir="rtl"><MathText>{opt.ar}</MathText></span>
               </span>
               {isSel && <Check size={20} style={{ color: 'var(--mol-green)', flex: '0 0 auto' }} />}
             </button>

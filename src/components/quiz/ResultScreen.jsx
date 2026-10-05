@@ -21,13 +21,18 @@ export default function ResultScreen({ student, examTitle, certificateTemplateId
 
   const reportRef = useRef(null);
   const [generating, setGenerating] = useState(false);
+  const [pdfError, setPdfError] = useState('');
 
   const downloadPdf = async () => {
     const el = reportRef.current;
     if (!el || generating) return;
     setGenerating(true);
+    setPdfError('');
     try {
       await downloadPaginatedPdf(el, `تقرير-النتيجة-${student?.name || 'student'}.pdf`);
+    } catch (error) {
+      console.error('Result PDF export failed:', error);
+      setPdfError('تعذر تحميل بعض الصور أو تجهيز التقرير. تحقق من الصور ثم أعد المحاولة.');
     } finally {
       setGenerating(false);
     }
@@ -114,6 +119,7 @@ export default function ResultScreen({ student, examTitle, certificateTemplateId
           </button>
         </div>
       </div>
+      {pdfError && <p role="alert" className="mt-3 text-sm font-bold no-print" style={{ color: 'var(--mol-red)' }}>{pdfError}</p>}
       <p className="text-center text-xs font-bold mt-6 no-print" style={{ color: 'var(--mol-muted)' }}>
         مدرسة خالد بن الوليد • إعداد الأستاذ محمد مدحت • منصة لغة الكيمياء
       </p>

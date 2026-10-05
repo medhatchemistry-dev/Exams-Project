@@ -12,6 +12,7 @@ export default function ResultDetailModal({ result, onClose }) {
   const ref = useRef(null);
   const [generating, setGenerating] = useState(false);
   const [questions, setQuestions] = useState(null);
+  const [pdfError, setPdfError] = useState('');
   let answers = result.answers_json || {};
   try {
     if (typeof answers === 'string') answers = JSON.parse(answers || '{}');
@@ -40,8 +41,12 @@ export default function ResultDetailModal({ result, onClose }) {
   const download = async () => {
     if (generating || !questions) return;
     setGenerating(true);
+    setPdfError('');
     try {
       await downloadPaginatedPdf(ref.current, `تقرير-${result.student_name}.pdf`);
+    } catch (error) {
+      console.error('Result PDF export failed:', error);
+      setPdfError('تعذر تحميل بعض الصور أو تجهيز التقرير. تحقق من الصور ثم أعد المحاولة.');
     } finally {
       setGenerating(false);
     }
@@ -70,15 +75,18 @@ export default function ResultDetailModal({ result, onClose }) {
             <Loader2 className="animate-spin" size={18} /> جاري تجهيز تقرير الامتحان…
           </div>
         ) : (
-          <AnswerReport
-            innerRef={ref}
-            student={{ name: result.student_name, grade: result.grade, track: result.track, section: result.section, id: result.student_number }}
-            score={result.score}
-            total={result.total}
-            submissionTime={result.submission_time}
-            questions={questions}
-            answers={answers}
-          />
+          <>
+            {pdfError && <p role="alert" className="px-5 pb-3 text-sm font-bold" style={{ color: 'var(--mol-red)' }}>{pdfError}</p>}
+            <AnswerReport
+              innerRef={ref}
+              student={{ name: result.student_name, grade: result.grade, track: result.track, section: result.section, id: result.student_number }}
+              score={result.score}
+              total={result.total}
+              submissionTime={result.submission_time}
+              questions={questions}
+              answers={answers}
+            />
+          </>
         )}
       </div>
     </div>

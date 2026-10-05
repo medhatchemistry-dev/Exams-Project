@@ -150,7 +150,7 @@ function sanitizeStyle(style) {
   return safeDeclarations.join('; ');
 }
 
-function sanitizeRichHtml(value, context) {
+function sanitizeRichHtml(value, context, baseUrl = '') {
   const source = String(value ?? '');
   if (!source.includes('<')) return source;
   const clean = DOMPurify.sanitize(source, {
@@ -166,8 +166,15 @@ function sanitizeRichHtml(value, context) {
   for (const element of Array.from(container.querySelectorAll('*'))) {
     if (element.hasAttribute('style')) element.setAttribute('style', sanitizeStyle(element.getAttribute('style')));
     if (element.tagName === 'IMG') {
-      const src = element.getAttribute('src') || '';
+      let src = element.getAttribute('src') || '';
+      if (!SAFE_DATA_IMAGE.test(src) && baseUrl) {
+        try {
+          const resolved = new URL(src, baseUrl);
+          src = resolved.protocol === 'https:' && !resolved.username && !resolved.password ? resolved.href : '';
+        } catch { src = ''; }
+      }
       if (!(src.startsWith('https://') || SAFE_DATA_IMAGE.test(src))) element.removeAttribute('src');
+      else element.setAttribute('src', src);
       if (src.startsWith('data:') && src.length > 1_500_000) fail(`${context}: embedded image is too large`);
       element.setAttribute('loading', 'lazy');
       element.setAttribute('referrerpolicy', 'no-referrer');
@@ -176,7 +183,7 @@ function sanitizeRichHtml(value, context) {
   return container.innerHTML;
 }
 
-function normalizeQuestion(question, bankKey, questionIndex) {
+function normalizeQuestion(question, bankKey, questionIndex, baseUrl = '') {
   const context = `${bankKey}, question ${questionIndex + 1}`;
   if (!question || typeof question !== 'object' || Array.isArray(question)) fail(`${context}: expected an object`);
   const qArValue = typeof question.qAr === 'string' ? question.qAr.trim() : '';
@@ -195,29 +202,29 @@ function normalizeQuestion(question, bankKey, questionIndex) {
     const ar = arValue || enValue;
     if (!ar) fail(`${context}, option ${optionIndex + 1}: option text is required in Arabic or English`);
     return {
-      ar: sanitizeRichHtml(ar, `${context}, option ${optionIndex + 1}`),
-      ...(enValue || arValue ? { en: sanitizeRichHtml(enValue || arValue, `${context}, option ${optionIndex + 1}`) } : {}),
+      ar: sanitizeRichHtml(ar, `${context}, option ${optionIndex + 1}`, baseUrl),
+      ...(enValue ? { en: sanitizeRichHtml(enValue, `${context}, option ${optionIndex + 1}`, baseUrl) } : {}),
     };
   });
   return {
     id: typeof question.id === 'string' && question.id.trim() ? question.id.trim().slice(0, 100) : `${bankKey}-${questionIndex + 1}`,
-    qAr: sanitizeRichHtml(qAr, context),
-    ...(qEnValue || qArValue ? { qEn: sanitizeRichHtml(qEnValue || qArValue, context) } : {}),
-    ...(typeof question.mediaHtml === 'string' && question.mediaHtml.trim() ? { mediaHtml: sanitizeRichHtml(question.mediaHtml, `${context}, media`) } : {}),
+    qAr: sanitizeRichHtml(qAr, context, baseUrl),
+    ...(qEnValue ? { qEn: sanitizeRichHtml(qEnValue, context, baseUrl) } : {}),
+    ...(typeof question.mediaHtml === 'string' && question.mediaHtml.trim() ? { mediaHtml: sanitizeRichHtml(question.mediaHtml, `${context}, media`, baseUrl) } : {}),
     options,
     answer,
   };
 }
 
-function normalizeQuestionList(questions, bankKey) {
+function normalizeQuestionList(questions, bankKey, baseUrl = '') {
   if (!Array.isArray(questions) || !questions.length) fail(`${bankKey}: bank must contain at least one question`);
-  const normalized = questions.map((question, index) => normalizeQuestion(question, bankKey, index));
+  const normalized = questions.map((question, index) => normalizeQuestion(question, bankKey, index, baseUrl));
   const ids = normalized.map((question) => question.id);
   if (new Set(ids).size !== ids.length) fail(`${bankKey}: question IDs must be unique within a bank`);
   return normalized;
 }
 
-function validateBanks(rawBanks) {
+function validateBanks(rawBanks, baseUrl = '') {
   if (!rawBanks || typeof rawBanks !== 'object' || Array.isArray(rawBanks)) fail('questionBanksByGrade must be an object');
   const keys = Object.keys(rawBanks);
   if (!keys.length) fail('questionBanksByGrade contains no banks');
@@ -230,7 +237,7 @@ function validateBanks(rawBanks) {
     if (!Array.isArray(questions) || !questions.length) fail(`${key}: bank must contain at least one question`);
     count += questions.length;
     if (count > MAX_EXAM_QUESTIONS) fail(`exam exceeds ${MAX_EXAM_QUESTIONS} questions`);
-    banks[key] = normalizeQuestionList(questions, key);
+    banks[key] = normalizeQuestionList(questions, key, baseUrl);
   }
   return { banks, bankSummaries: keys.map((key) => ({ bankKey: key, questionCount: banks[key].length })) };
 }
@@ -245,17 +252,17 @@ export function sanitizePublicExamQuestion(question, bankKey, questionIndex) {
   return publicQuestion;
 }
 
-export function parseExamHtml(html, filename = 'exam.html') {
+export function parseExamHtml(html, filename = 'exam.html', baseUrl = '') {
   if (typeof html !== 'string') fail('HTML file content must be text');
   if (new TextEncoder().encode(html).byteLength > MAX_EXAM_FILE_BYTES) fail('HTML file exceeds 5 MiB');
   if (!/\.html?$/i.test(filename)) fail('Choose an HTML file');
   const source = extractExamSource(html);
-  if (source.kind === 'banks') return validateBanks(source.banks);
+  if (source.kind === 'banks') return validateBanks(source.banks, baseUrl);
   const questionGroups = source.questionGroups.map(({ groupKey, questions }) => ({
     groupKey,
-    questions: normalizeQuestionList(questions, groupKey),
+    questions: normalizeQuestionList(questions, groupKey, baseUrl),
   }));
-  const questions = normalizeQuestionList(questionGroups.flatMap((group) => group.questions), 'exam');
+  const questions = normalizeQuestionList(questionGroups.flatMap((group) => group.questions), 'exam', baseUrl);
   if (questions.length > MAX_EXAM_QUESTIONS) fail(`exam exceeds ${MAX_EXAM_QUESTIONS} questions`);
   return {
     banks: Object.create(null),

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowRight, Clock3, Loader2, RefreshCw, Users, CheckCircle2 } from 'lucide-react';
-import { getExamDetail } from '@/lib/examRepository';
+import { ArrowRight, Clock3, Download, Loader2, RefreshCw, Users, CheckCircle2 } from 'lucide-react';
+import { getExamDetail, listExamRoster } from '@/lib/examRepository';
+import { exportExamGradesCsv } from '@/lib/excelExport';
 
 export default function ExamDetailPage() {
   const { examId } = useParams();
@@ -12,7 +13,11 @@ export default function ExamDetailPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     setError('');
-    try { setDetail(await getExamDetail(examId)); }
+    try {
+      const data = await getExamDetail(examId);
+      const roster = await listExamRoster(data.exam);
+      setDetail({ ...data, roster });
+    }
     catch (loadError) {
       console.error('Exam detail load failed:', loadError);
       setError('تعذر تحميل تفاصيل الاختبار. تحقق من صلاحية حساب المعلم أو أن الاختبار موجود.');
@@ -25,7 +30,7 @@ export default function ExamDetailPage() {
   if (error && !detail) return <section className="space-y-4"><Link className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2" to="/admin/exams"><ArrowRight size={16} /> الاختبارات</Link><p role="alert" className="mol-card p-4 font-bold" style={{ color: 'var(--mol-red)' }}>{error}</p></section>;
   if (!detail) return null;
 
-  const { exam, accessCode, results, attempts, events } = detail;
+  const { exam, accessCode, results, attempts, events, roster = [] } = detail;
   const completed = results.length;
   const average = completed ? Math.round(results.reduce((sum, row) => sum + Number(row.percentage || 0), 0) / completed) : 0;
   const questionCount = Object.values(exam.banks || {}).reduce((sum, items) => sum + (Array.isArray(items) ? items.length : 0), 0);
@@ -37,8 +42,9 @@ export default function ExamDetailPage() {
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-bold"><span>الحالة: {exam.completed_at ? 'مكتمل' : exam.status === 'archived' ? 'مؤرشف' : exam.status === 'paused' ? 'متوقف مؤقتاً' : 'متاح'}</span>{accessCode?.code && <span>رمز الاختبار: <code dir="ltr" className="font-mono text-lg">{accessCode.code}</code>{accessCode.expires_at && ` · ينتهي ${new Date(accessCode.expires_at).toLocaleString('ar')}`}</span>}</div>
     </header>
     <div className="grid gap-3 sm:grid-cols-3"><article className="mol-card p-5"><p className="text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>الطلاب الذين أكملوا</p><p className="mt-2 flex items-center gap-2 text-3xl font-extrabold"><CheckCircle2 size={24} style={{ color: 'var(--mol-green)' }} />{completed}</p></article><article className="mol-card p-5"><p className="text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>متوسط الدرجات</p><p className="mt-2 text-3xl font-extrabold">{completed ? `${average}%` : '—'}</p></article><article className="mol-card p-5"><p className="text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>محاولات الانضمام</p><p className="mt-2 flex items-center gap-2 text-3xl font-extrabold"><Users size={24} style={{ color: 'var(--mol-cobalt)' }} />{attempts.length}</p></article></div>
+    <section className="mol-card flex flex-wrap items-center justify-between gap-3 p-5"><div><h3 className="font-extrabold">تنزيل درجات الصف كاملاً</h3><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{roster.length} طالباً في قائمة الصف · الطلاب الذين لم يسلّموا يظهرون بوضوح.</p></div><button type="button" className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-4 py-2.5" onClick={() => exportExamGradesCsv({ exam, roster, results })}><Download size={17} /> تنزيل درجات CSV</button></section>
     <section className="mol-card overflow-hidden"><div className="border-b p-4" style={{ borderColor: 'var(--mol-line-strong)' }}><h3 className="font-extrabold">الدرجات المسجلة</h3></div>{results.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-right text-sm"><thead style={{ background: 'var(--mol-surface-2)' }}><tr>{['الطالب', 'الرقم', 'الصف', 'الدرجة', 'النسبة', 'وقت الإكمال'].map((label) => <th key={label} className="px-4 py-3 font-extrabold">{label}</th>)}</tr></thead><tbody>{results.map((row) => <tr key={row.id} className="border-t" style={{ borderColor: 'var(--mol-line-strong)' }}><td className="px-4 py-3 font-bold">{row.student_name}</td><td className="px-4 py-3">{row.student_number || '—'}</td><td className="px-4 py-3">{row.grade} · {row.track} · {row.section}</td><td className="px-4 py-3 font-extrabold">{row.score}/{row.total}</td><td className="px-4 py-3">{row.percentage}%</td><td className="px-4 py-3"><span className="inline-flex items-center gap-1"><Clock3 size={14} />{new Date(row.created_at).toLocaleString('ar')}</span></td></tr>)}</tbody></table></div> : <p className="p-6 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>لا توجد نتائج مكتملة بعد.</p>}</section>
-    <section className="mol-card overflow-hidden"><div className="border-b p-4" style={{ borderColor: 'var(--mol-line-strong)' }}><h3 className="font-extrabold">سجل المحاولات</h3></div>{attempts.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-right text-sm"><thead style={{ background: 'var(--mol-surface-2)' }}><tr>{['الطالب', 'الرقم', 'بدأ', 'التحذيرات', 'الحالة'].map((label) => <th key={label} className="px-4 py-3 font-extrabold">{label}</th>)}</tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.id} className="border-t" style={{ borderColor: 'var(--mol-line-strong)' }}><td className="px-4 py-3 font-bold">{attempt.student_name}</td><td className="px-4 py-3">{attempt.student_number}</td><td className="px-4 py-3">{new Date(attempt.started_at).toLocaleString('ar')}</td><td className="px-4 py-3">{attempt.warning_count}</td><td className="px-4 py-3">{attempt.completed_at ? 'مكتمل' : attempt.locked_at ? 'مقفل بانتظار المعلم' : 'جارٍ'}</td></tr>)}</tbody></table></div> : <p className="p-6 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>لا توجد محاولات محفوظة.</p>}</section>
+    <section className="mol-card overflow-hidden"><div className="border-b p-4" style={{ borderColor: 'var(--mol-line-strong)' }}><h3 className="font-extrabold">سجل المحاولات</h3></div>{attempts.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-right text-sm"><thead style={{ background: 'var(--mol-surface-2)' }}><tr>{['الطالب', 'الرقم', 'بدأ', 'التحذيرات', 'الحالة'].map((label) => <th key={label} className="px-4 py-3 font-extrabold">{label}</th>)}</tr></thead><tbody>{attempts.map((attempt) => <tr key={attempt.id} className="border-t" style={{ borderColor: 'var(--mol-line-strong)' }}><td className="px-4 py-3 font-bold">{attempt.student_name}</td><td className="px-4 py-3">{attempt.student_number}</td><td className="px-4 py-3">{new Date(attempt.started_at).toLocaleString('ar')}</td><td className="px-4 py-3">{attempt.warning_count}</td><td className="px-4 py-3">{attempt.completed_at ? 'مكتمل' : attempt.closed_at ? 'أُغلق دون تسليم' : attempt.locked_at ? 'مقفل بانتظار المعلم' : 'جارٍ'}</td></tr>)}</tbody></table></div> : <p className="p-6 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>لا توجد محاولات محفوظة.</p>}</section>
     <section className="mol-card overflow-hidden"><div className="border-b p-4" style={{ borderColor: 'var(--mol-line-strong)' }}><h3 className="font-extrabold">سجل النشاط المرصود</h3><p className="mt-1 text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>تعرض الأحداث التي سجلها الخادم من إشارات المتصفح المتاحة فقط. لا يمكن استعادة الأحداث التي سبقت بدء التسجيل، وهذه الإشارات لا تثبت وحدها نية الطالب.</p></div>{events.length ? <ol className="divide-y" style={{ borderColor: 'var(--mol-line-strong)' }}>{events.map((event) => <li key={event.id} className="flex flex-wrap justify-between gap-2 px-4 py-3 text-sm"><span className="font-bold">{event.event_type}{event.details?.signal ? ` · ${event.details.signal}` : ''}{event.details?.warning_count ? ` · التحذير ${event.details.warning_count}` : ''}</span><time className="text-xs" style={{ color: 'var(--mol-muted)' }}>{new Date(event.created_at).toLocaleString('ar')}</time></li>)}</ol> : <p className="p-6 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>لا توجد أحداث مسجلة منذ بدء التتبع؛ الأحداث الأقدم غير متاحة.</p>}</section>
   </section>;
 }

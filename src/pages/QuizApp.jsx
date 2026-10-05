@@ -12,14 +12,22 @@ import ExamCodeScreen from '@/components/quiz/ExamCodeScreen';
 import { isDuplicateViolation, nextWarningState } from '@/lib/examSecurity';
 
 const ATTEMPTS_KEY = 'student_attempts';
+const ACTIVE_ATTEMPTS_KEY = 'student_active_attempts';
 
-function readAttempts() {
+function readLocalObject(key) {
   try {
-    const attempts = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '{}');
-    return attempts && typeof attempts === 'object' ? attempts : {};
-  } catch {
-    return {};
-  }
+    const value = JSON.parse(localStorage.getItem(key) || '{}');
+    return value && typeof value === 'object' ? value : {};
+  } catch { return {}; }
+}
+
+function attemptDraftKey(examId, studentId, currentAttemptId) {
+  return `exam_draft_${examId}_${studentId}_${currentAttemptId}`;
+}
+
+async function hashDeviceToken(token) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export default function QuizApp() {
@@ -36,6 +44,10 @@ export default function QuizApp() {
   const [teacherModal, setTeacherModal] = useState(false);
   const [security, setSecurity] = useState({ open: false, warningsLeft: 3 });
   const [attemptId, setAttemptId] = useState(null);
+  const [attemptDeviceToken, setAttemptDeviceToken] = useState('');
+  const [attemptDurationMinutes, setAttemptDurationMinutes] = useState(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(null);
+  const [attemptExamTitle, setAttemptExamTitle] = useState('');
   const [attemptLocked, setAttemptLocked] = useState(false);
   const [examPaused, setExamPaused] = useState(false);
   const [attemptUnavailable, setAttemptUnavailable] = useState(false);
@@ -46,9 +58,11 @@ export default function QuizApp() {
   const alarmCtx = useRef(null);
   const alarmOsc = useRef(null);
   const pendingStudent = useRef(null);
+  const pendingDeviceRecovery = useRef(false);
   const lastViolationAt = useRef(null);
   const pendingViolationSignal = useRef(null);
   const audioStartPromise = useRef(null);
+  const answerSaveQueue = useRef(Promise.resolve());
   const [accessCode, setAccessCode] = useState('');
 
   // alarm sound (WebAudio beep)
@@ -169,7 +183,17 @@ export default function QuizApp() {
         if (AudioContextConstructor) alarmCtx.current = new AudioContextConstructor();
       }
       audioStartPromise.current = alarmCtx.current
-        ? Promise.resolve(alarmCtx.current.resume()).then(() => alarmCtx.current.state === 'running').catch(() => false)
+        ? Promise.resolve(alarmCtx.current.resume()).then(() => {
+          if (alarmCtx.current?.state !== 'running') return false;
+          const oscillator = alarmCtx.current.createOscillator();
+          const gain = alarmCtx.current.createGain();
+          gain.gain.value = 0.04;
+          oscillator.frequency.value = 660;
+          oscillator.connect(gain).connect(alarmCtx.current.destination);
+          oscillator.start();
+          oscillator.stop(alarmCtx.current.currentTime + 0.12);
+          return true;
+        }).catch(() => false)
         : Promise.resolve(false);
     } catch {
       audioStartPromise.current = Promise.resolve(false);
@@ -197,6 +221,24 @@ export default function QuizApp() {
             setAttemptUnavailable(true);
             return;
           }
+          if (data.closed) {
+            const activeAttempts = readLocalObject(ACTIVE_ATTEMPTS_KEY);
+            const attemptKey = `${validatedExam?.examId}:${student?.id}`;
+            delete activeAttempts[attemptKey];
+            localStorage.setItem(ACTIVE_ATTEMPTS_KEY, JSON.stringify(activeAttempts));
+            localStorage.removeItem(attemptDraftKey(validatedExam?.examId, student?.id, attemptId));
+            setAttemptId(null);
+            setAttemptDeviceToken('');
+            setStudent(null);
+            setQuestions([]);
+            setAnswers({});
+            setScreen('access');
+            setAccessCode('');
+            setValidatedExam(null);
+            showAlert('أُغلق الاختبار نهائياً', 'أغلق المعلم هذا الاختبار. الإجابات غير المرسلة حُذفت، والنتائج المسلّمة محفوظة.');
+            checking = false;
+            return;
+          }
           let recoveredWarningCount = null;
           if (pendingViolationSignal.current) {
             const signal = pendingViolationSignal.current;
@@ -214,6 +256,8 @@ export default function QuizApp() {
           const paused = data.examStatus === 'paused';
           const active = data.examStatus === 'available' && data.codeValid && !data.completed;
           setExamPaused(paused);
+          setRemainingSeconds(data.remainingSeconds ?? null);
+          setAttemptDurationMinutes(data.durationMinutes ?? null);
           setAttemptLocked(Boolean(data.locked) || recoveredWarningCount >= 3);
           setAttemptUnavailable(Boolean(pendingViolationSignal.current) || (!paused && !active && !data.locked));
           checking = false;
@@ -241,7 +285,7 @@ export default function QuizApp() {
 
     const interval = window.setInterval(checkAccess, 15000);
     return () => window.clearInterval(interval);
-  }, [screen, isExamCodeActive, showAlert, stopAlarm, attemptId, accessCode]);
+  }, [screen, isExamCodeActive, showAlert, stopAlarm, attemptId, accessCode, validatedExam, student]);
 
   // security monitoring (only during quiz)
   useEffect(() => {
@@ -299,42 +343,71 @@ export default function QuizApp() {
   }, [stopAlarm]);
 
   const beginExam = useCallback(
-    async (info) => {
+    async (info, recoverDevice = false) => {
       if (validatedExam?.legacy && !banks) return;
-      if (validatedExam?.targetGrade && (
-        info.grade !== validatedExam.targetGrade
-        || info.track !== validatedExam.targetTrack
-        || info.section !== validatedExam.targetSection
-      )) {
-        showAlert('هذا الاختبار مخصص لشعبة أخرى', `الاختبار مخصص للصف ${validatedExam.targetGrade} · ${validatedExam.targetTrack} · شعبة ${validatedExam.targetSection}.`);
-        return;
-      }
       if (!await isExamCodeActive()) {
         setScreen('access');
         showAlert('انتهت صلاحية الرمز', 'أوقف المعلم الاختبار أو انتهت صلاحية الرمز. اطلب رمزاً صالحاً للمتابعة.');
         return;
       }
-      let selectedBank;
+      let exam = [];
       try {
-        selectedBank = selectExamBank(validatedExam, info.grade, info.track, banks || {});
+        const selectedBank = selectExamBank(validatedExam, info.grade, info.track, banks || {});
+        exam = buildExam({ [selectedBank.bankKey]: selectedBank.questions }, info.grade, info.track, info.id, {
+          examId: selectedBank.examId,
+          legacy: Boolean(validatedExam?.legacy),
+        });
       } catch (error) {
-        showAlert('الصف غير متاح في هذا الاختبار', error.message);
-        return;
+        if (validatedExam?.legacy) {
+          showAlert('الصف غير متاح في هذا الاختبار', error.message);
+          return;
+        }
+        // A student returning after an edit may no longer have a bank in the
+        // latest revision. The server can still restore the pinned attempt.
       }
-      const exam = buildExam({ [selectedBank.bankKey]: selectedBank.questions }, info.grade, info.track, info.id, {
-        examId: selectedBank.examId,
-        legacy: Boolean(validatedExam?.legacy),
-      });
       let startedAttemptId = null;
+      let attemptToken = '';
+      let attemptQuestions = exam;
+      let restoredAnswers = {};
+      let attemptPaused = false;
+      let attemptIsLocked = false;
       if (!validatedExam?.legacy) {
+        const attemptKey = `${validatedExam.examId}:${info.id}`;
+        const tokens = readLocalObject('exam_device_tokens');
+        attemptToken = typeof tokens[attemptKey] === 'string' ? tokens[attemptKey] : crypto.randomUUID();
+        tokens[attemptKey] = attemptToken;
+        localStorage.setItem('exam_device_tokens', JSON.stringify(tokens));
+        if (recoverDevice) {
+          const { error: rebindError } = await supabase.rpc('rebind_exam_attempt_device_for_student', {
+            target_exam_id: Number(validatedExam.examId),
+            candidate_code: accessCode,
+            student_name_input: info.name,
+            student_number_input: info.id,
+            grade_input: info.grade,
+            track_input: info.track,
+            section_input: info.section,
+            device_token_hash_input: await hashDeviceToken(attemptToken),
+          });
+          if (rebindError) {
+            console.error('Teacher approved attempt recovery failed:', rebindError);
+            showAlert('تعذر استعادة المحاولة', 'لم يتم العثور على محاولة نشطة تطابق بيانات الطالب. لم يتم إنشاء محاولة جديدة.');
+            return;
+          }
+        }
         const { data, error } = await supabase.functions.invoke('validate-exam-code', {
-          body: { action: 'start', code: accessCode, student: info, questions: exam },
+          body: { action: 'start', code: accessCode, student: info, questions: exam, deviceToken: attemptToken },
         });
         if (error || !data?.started) {
           console.error('Exam attempt start failed:', {
             category: error?.name || (data?.valid ? 'unsupported_response' : 'unexpected_response'),
             status: error?.context?.status,
           });
+          if (data?.error?.includes('another device') || data?.error?.includes('An active attempt already exists')) {
+            pendingStudent.current = info;
+            pendingDeviceRecovery.current = true;
+            setTeacherModal(true);
+            return;
+          }
           if (document.fullscreenElement && document.exitFullscreen) {
             await document.exitFullscreen().catch(() => {});
           }
@@ -342,6 +415,42 @@ export default function QuizApp() {
           return;
         }
         startedAttemptId = data.attemptId;
+        attemptQuestions = Array.isArray(data.questions) ? data.questions : exam;
+        const draftKey = attemptDraftKey(validatedExam.examId, info.id, startedAttemptId);
+        const localDraft = readLocalObject(draftKey);
+        const validLocalDraft = Object.fromEntries(Object.entries(localDraft).filter(([questionKey, optionValue]) => {
+          const questionIndex = Number(questionKey);
+          const optionIndex = Number(optionValue);
+          return /^(0|[1-9][0-9]*)$/.test(questionKey)
+            && Number.isInteger(questionIndex) && questionIndex >= 0 && questionIndex < attemptQuestions.length
+            && Number.isInteger(optionIndex) && optionIndex >= 0
+            && optionIndex < attemptQuestions[questionIndex]?.options?.length;
+        }).map(([questionKey, optionValue]) => [questionKey, Number(optionValue)]));
+        restoredAnswers = { ...(data.answers || {}), ...validLocalDraft };
+        if (Object.keys(restoredAnswers).length) {
+          const { error: restoreError } = await supabase.functions.invoke('validate-exam-code', {
+            body: { action: 'answers', code: accessCode, attemptId: startedAttemptId, deviceToken: attemptToken, answers: restoredAnswers },
+          });
+          if (restoreError) {
+            console.error('Could not sync restored answer draft:', restoreError);
+            showAlert('تعذر استعادة الإجابات', 'تم تحميل الإجابات المحفوظة محلياً، لكن تحقق من الاتصال قبل متابعة الاختبار.');
+          }
+        }
+        data.durationMinutes = data.durationMinutes ?? validatedExam.durationMinutes ?? null;
+        setAttemptDurationMinutes(data.durationMinutes);
+        setRemainingSeconds(data.remainingSeconds ?? null);
+        setAttemptExamTitle(data.examTitle || validatedExam.examTitle || 'الاختبار');
+        attemptPaused = Boolean(data.paused);
+        attemptIsLocked = Boolean(data.locked);
+        warningCount.current = Number(data.warningCount || 0);
+        const activeAttempts = readLocalObject(ACTIVE_ATTEMPTS_KEY);
+        const previousAttemptId = activeAttempts[attemptKey];
+        if (previousAttemptId && previousAttemptId !== startedAttemptId) {
+          localStorage.removeItem(attemptDraftKey(validatedExam.examId, info.id, previousAttemptId));
+        }
+        activeAttempts[attemptKey] = startedAttemptId;
+        localStorage.setItem(ACTIVE_ATTEMPTS_KEY, JSON.stringify(activeAttempts));
+        localStorage.setItem(draftKey, JSON.stringify(restoredAnswers));
         const audioReady = await audioStartPromise.current;
         if (!audioReady) {
           const { error: eventError } = await supabase.functions.invoke('validate-exam-code', {
@@ -351,17 +460,20 @@ export default function QuizApp() {
         }
       }
       setAttemptId(startedAttemptId);
-      setAttemptLocked(false);
-      setExamPaused(false);
+      setAttemptDeviceToken(attemptToken);
+      setAttemptLocked(attemptIsLocked);
+      setExamPaused(attemptPaused);
       setAttemptUnavailable(false);
       lastViolationAt.current = null;
-      const attempts = readAttempts();
-      attempts[info.id] = 1;
+      const attempts = readLocalObject(ATTEMPTS_KEY);
+      const attemptStorageKey = validatedExam?.legacy ? info.id : `${validatedExam?.examId}:${info.id}`;
+      attempts[attemptStorageKey] = 1;
       localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
       setStudent(info);
-      setQuestions(exam);
-      setAnswers({});
-      warningCount.current = 0;
+      setQuestions(attemptQuestions);
+      setAnswers(restoredAnswers);
+      if (validatedExam?.legacy) warningCount.current = 0;
+      answerSaveQueue.current = Promise.resolve();
       isSubmitting.current = false;
       setScreen('quiz');
       window.scrollTo({ top: 0 });
@@ -370,21 +482,47 @@ export default function QuizApp() {
   );
 
   const handleStart = useCallback(
-    (info) => {
+    async (info) => {
       if (!info.name || !info.id || !info.grade || !info.track || !info.section) {
         showAlert('تنبيه', 'الرجاء إدخال كافة البيانات المطلوبة بدقة.');
         return;
       }
       pendingStudent.current = info;
-      const attempts = readAttempts();
-      if ((attempts[info.id] || 0) >= 1) {
+      const attempts = readLocalObject(ATTEMPTS_KEY);
+      const attemptKey = validatedExam?.legacy ? info.id : `${validatedExam?.examId}:${info.id}`;
+      const activeAttempts = readLocalObject(ACTIVE_ATTEMPTS_KEY);
+      const deviceTokens = readLocalObject('exam_device_tokens');
+      let hasSavedAttempt = Boolean(activeAttempts[attemptKey]);
+      let needsDeviceRecovery = !validatedExam?.legacy && hasSavedAttempt && !deviceTokens[attemptKey];
+      if (needsDeviceRecovery) {
+        const { data, error } = await supabase.functions.invoke('validate-exam-code', {
+          body: { action: 'attempt-state', code: accessCode, attemptId: activeAttempts[attemptKey] },
+        });
+        if (error) {
+          showAlert('تعذر التحقق من المحاولة', 'تحقق من الاتصال ثم أعد المحاولة لاستعادة الإجابات بأمان.');
+          return;
+        }
+        if (data?.closed) {
+          localStorage.removeItem(attemptDraftKey(validatedExam.examId, info.id, activeAttempts[attemptKey]));
+          delete activeAttempts[attemptKey];
+          localStorage.setItem(ACTIVE_ATTEMPTS_KEY, JSON.stringify(activeAttempts));
+          showAlert('أُغلق الاختبار نهائياً', 'أغلق المعلم هذا الاختبار. الإجابات غير المرسلة حُذفت، والنتائج المسلّمة محفوظة.');
+          return;
+        }
+        if (data?.completed || !data?.found) {
+          hasSavedAttempt = false;
+          needsDeviceRecovery = false;
+        }
+      }
+      if (needsDeviceRecovery || ((attempts[attemptKey] || 0) >= 1 && (!hasSavedAttempt || validatedExam?.legacy))) {
+        pendingDeviceRecovery.current = needsDeviceRecovery;
         setTeacherModal(true);
         return;
       }
       startBrowserCapabilities();
       beginExam(info);
     },
-    [beginExam, showAlert, startBrowserCapabilities]
+    [beginExam, showAlert, startBrowserCapabilities, validatedExam]
   );
 
   const verifyTeacherCode = useCallback(
@@ -394,8 +532,10 @@ export default function QuizApp() {
       if (user && await hasTeacherRole(user.id)) {
         setTeacherModal(false);
         const info = pendingStudent.current;
+        const recoverDevice = pendingDeviceRecovery.current;
+        pendingDeviceRecovery.current = false;
         showAlert('نجاح', 'تم السماح بمحاولة إضافية بواسطة المعلم. يمكنك بدء المحاولة الآن.');
-        beginExam(info);
+        beginExam(info, recoverDevice);
       } else {
         showAlert('يلزم تسجيل دخول المعلم', 'سجّل الدخول بحساب المعلم المصرّح به من صفحة الإدارة، ثم أعد المحاولة.');
       }
@@ -406,7 +546,23 @@ export default function QuizApp() {
   const handleAnswer = useCallback((idx, optIdx) => {
     if (attemptLocked || examPaused || attemptUnavailable) return;
     setAnswers((a) => ({ ...a, [idx]: optIdx }));
-  }, [attemptLocked, examPaused, attemptUnavailable]);
+    if (attemptId && attemptDeviceToken) {
+      const draftKey = attemptDraftKey(validatedExam?.examId, student?.id, attemptId);
+      const nextAnswers = { ...answers, [idx]: optIdx };
+      localStorage.setItem(draftKey, JSON.stringify(nextAnswers));
+      answerSaveQueue.current = answerSaveQueue.current.catch(() => {}).then(async () => {
+        const { error } = await supabase.functions.invoke('validate-exam-code', {
+          body: { action: 'answer', code: accessCode, attemptId, deviceToken: attemptDeviceToken, questionIndex: idx, optionIndex: optIdx },
+        });
+        if (error) {
+          console.error('Answer autosave failed:', error);
+          setAttemptUnavailable(true);
+          showAlert('تعذر حفظ الإجابة الآن', 'احتفظت الصفحة بإجابتك مؤقتاً. تحقق من الاتصال قبل متابعة الاختبار.');
+          throw error;
+        }
+      });
+    }
+  }, [attemptLocked, examPaused, attemptUnavailable, attemptId, attemptDeviceToken, validatedExam, student, answers, accessCode, showAlert]);
 
   const handleTeacherReentry = useCallback(async (password) => {
     const { data, error } = await supabase.functions.invoke('verify-exam-reentry', {
@@ -451,6 +607,19 @@ export default function QuizApp() {
         }
         return;
       }
+      if (attemptId && attemptDeviceToken && !auto) {
+        await answerSaveQueue.current.catch(() => {});
+        const { error: saveError } = await supabase.functions.invoke('validate-exam-code', {
+          body: { action: 'answers', code: accessCode, attemptId, deviceToken: attemptDeviceToken, answers },
+        });
+        if (saveError) {
+          console.error('Final answer draft sync failed:', saveError);
+          setAttemptUnavailable(true);
+          showAlert('تعذر حفظ الإجابات', 'لم يتم تسليم الاختبار. تحقق من الاتصال ثم أعد المحاولة.');
+          return;
+        }
+        setAttemptUnavailable(false);
+      }
       isSubmitting.current = true;
       stopAlarm();
       setSecurity({ open: false, warningsLeft: 3 });
@@ -482,14 +651,21 @@ export default function QuizApp() {
         score = data.score;
         total = data.total;
         finalQuestions = data.questions || questions;
+      if (!validatedExam?.legacy) {
+        const attemptKey = `${validatedExam?.examId}:${student?.id}`;
+        const activeAttempts = readLocalObject(ACTIVE_ATTEMPTS_KEY);
+        delete activeAttempts[attemptKey];
+        localStorage.setItem(ACTIVE_ATTEMPTS_KEY, JSON.stringify(activeAttempts));
+        localStorage.removeItem(attemptDraftKey(validatedExam?.examId, student?.id, attemptId));
+      }
       }
 
       setQuestions(finalQuestions);
-      setResult({ score, total, submissionTime, isLegacy: Boolean(validatedExam?.legacy), examTitle: validatedExam?.legacy ? 'الاختبار الحالي' : validatedExam?.examTitle || 'الاختبار', certificateTemplateId: validatedExam?.certificateTemplateId || 1 });
+      setResult({ score, total, submissionTime, isLegacy: Boolean(validatedExam?.legacy), examTitle: validatedExam?.legacy ? 'الاختبار الحالي' : attemptExamTitle || validatedExam?.examTitle || 'الاختبار', certificateTemplateId: validatedExam?.certificateTemplateId || 1 });
       setScreen('result');
       window.scrollTo({ top: 0 });
     },
-    [questions, answers, student, stopAlarm, showAlert, isExamCodeActive, validatedExam, accessCode, attemptId, attemptLocked, examPaused, attemptUnavailable]
+    [questions, answers, student, stopAlarm, showAlert, isExamCodeActive, validatedExam, accessCode, attemptId, attemptDeviceToken, attemptLocked, examPaused, attemptUnavailable, attemptExamTitle]
   );
 
   const restart = useCallback(() => {
@@ -503,6 +679,10 @@ export default function QuizApp() {
     warningCount.current = 0;
     isSubmitting.current = false;
     setAttemptId(null);
+    setAttemptDeviceToken('');
+    setAttemptDurationMinutes(null);
+    setRemainingSeconds(null);
+    setAttemptExamTitle('');
     setAttemptLocked(false);
     setExamPaused(false);
     setAttemptUnavailable(false);
@@ -539,18 +719,15 @@ export default function QuizApp() {
       {screen === 'login' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (
     <LoginScreen
       onStart={handleStart}
-      targetClass={validatedExam?.targetGrade ? {
-        grade: validatedExam.targetGrade,
-        track: validatedExam.targetTrack,
-        section: validatedExam.targetSection,
-      } : null}
+      durationMinutes={validatedExam?.durationMinutes}
+      targetClass={null}
     />
       )}
 
       {screen === 'quiz' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (
         <QuizScreen
           student={student}
-          examTitle={validatedExam?.examTitle}
+          examTitle={attemptExamTitle || validatedExam?.examTitle}
           questions={questions}
           answers={answers}
           onAnswer={handleAnswer}
@@ -560,6 +737,8 @@ export default function QuizApp() {
           locked={attemptLocked}
           unavailable={attemptUnavailable}
           browserCapabilities={browserCapabilities}
+          durationMinutes={attemptDurationMinutes}
+          remainingSeconds={remainingSeconds}
           onRetryCapabilities={startBrowserCapabilities}
         />
       )}
@@ -590,7 +769,7 @@ export default function QuizApp() {
       />
       <TeacherCodeModal
         open={teacherModal}
-        onClose={() => setTeacherModal(false)}
+        onClose={() => { pendingDeviceRecovery.current = false; setTeacherModal(false); }}
         onSubmit={verifyTeacherCode}
       />
       {security.open && (

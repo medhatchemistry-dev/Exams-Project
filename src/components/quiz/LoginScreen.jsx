@@ -1,10 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { FlaskConical, Phone, ShieldCheck, Settings } from 'lucide-react';
-import MathText from './MathText';
 import StudentPicker from './StudentPicker';
 
-export default function LoginScreen({ onStart, targetClass = null }) {
+export default function LoginScreen({ onStart, targetClass = null, durationMinutes = null }) {
   return (
     <div className="mol-wrap max-w-5xl mx-auto px-4 py-10 md:py-16">
       {/* Hero */}
@@ -19,7 +18,7 @@ export default function LoginScreen({ onStart, targetClass = null }) {
             <Settings size={14} /> Admin
           </Link>
           <div className="relative h-full flex flex-col items-center justify-center text-center px-4">
-            <img src="/logo.svg" alt="شعار منصة لغة الكيمياء" className="absolute right-4 top-4 h-16 w-16 object-contain md:right-7 md:top-7 md:h-24 md:w-24" />
+            <img src="/icon.png" alt="شعار منصة لغة الكيمياء" className="absolute right-4 top-4 h-16 w-16 object-contain md:right-7 md:top-7 md:h-24 md:w-24" />
             <div className="mol-chip inline-flex items-center gap-2 px-4 py-1.5 mb-3 text-xs font-extrabold" style={{ color: 'var(--mol-green)', borderColor: 'var(--mol-green)' }}>
               <FlaskConical size={14} /> مادة الكيمياء التفاعلية
             </div>
@@ -58,8 +57,12 @@ export default function LoginScreen({ onStart, targetClass = null }) {
 
         <StudentPicker onStart={onStart} targetClass={targetClass} />
 
+        <p className="mt-4 text-center text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>
+          عند بدء الاختبار يطلب المتصفح ملء الشاشة ويجرّب صوت التنبيه. قد يمنع المتصفح تشغيل الصوت، ولا يستطيع الموقع تجاوز كتم الجهاز أو مستوى صوته.
+        </p>
+
         <p className="text-center text-xs font-bold mt-6" style={{ color: 'var(--mol-muted)' }}>
-          <MathText>المدة: 45 دقيقة • مراقبة أمنية تلقائية</MathText>
+          <span>المدة: {Number.isInteger(durationMinutes) && durationMinutes > 0 ? `${durationMinutes} دقيقة` : 'مفتوح دون حد زمني'} • مراقبة أمنية تلقائية</span>
         </p>
       </div>
     </div>

@@ -33,7 +33,7 @@ export default function ExamPreview({ questions }) {
             const correct = question.options[question.answer];
             return (
               <li key={question.id}>
-                <span>السؤال {index + 1}: {ANSWER_MARKERS[question.answer] || question.answer + 1}</span>
+                <span>السؤال {index + 1}: {Number.isInteger(question.answer) ? (ANSWER_MARKERS[question.answer] || question.answer + 1) : 'مفتاح الإجابة غير محدد'}</span>
                 {correct?.ar && <span className="ms-2" style={{ color: 'var(--mol-muted)' }}>{correct.ar}</span>}
               </li>
             );

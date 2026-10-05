@@ -2,6 +2,11 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders, isAllowedOrigin, parseConfiguredOrigins } from '../_shared/cors.js';
 import { buildLegacySubmission, LegacySubmissionError, toPublicQuestionBanks } from '../_shared/legacyExamSubmission.js';
 
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 Deno.serve(async (request) => {
   const origin = request.headers.get('origin');
   const allowedOrigins = parseConfiguredOrigins(Deno.env.get('APP_ALLOWED_ORIGINS'));
@@ -60,12 +65,51 @@ Deno.serve(async (request) => {
       return Response.json({ recorded: true, warningCount }, { headers });
     }
 
+    if (body?.action === 'answer') {
+      if (typeof body.attemptId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.attemptId)
+        || typeof body.deviceToken !== 'string' || body.deviceToken.length < 32 || body.deviceToken.length > 128
+        || !Number.isInteger(body.questionIndex) || !Number.isInteger(body.optionIndex)) {
+        return Response.json({ error: 'Invalid answer draft' }, { status: 400, headers });
+      }
+      const { data, error: saveError } = await admin.rpc('save_exam_attempt_answer', {
+        target_attempt_id: body.attemptId,
+        candidate_code: code,
+        target_device_token_hash: await sha256Hex(body.deviceToken),
+        question_index: body.questionIndex,
+        option_index: body.optionIndex,
+      });
+      if (saveError) {
+        if (saveError.code === '22023') return Response.json({ error: saveError.message }, { status: 409, headers });
+        throw saveError;
+      }
+      return Response.json({ saved: true }, { headers });
+    }
+
+    if (body?.action === 'answers') {
+      if (typeof body.attemptId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.attemptId)
+        || typeof body.deviceToken !== 'string' || body.deviceToken.length < 32 || body.deviceToken.length > 128
+        || !body.answers || typeof body.answers !== 'object' || Array.isArray(body.answers)) {
+        return Response.json({ error: 'Invalid answer draft' }, { status: 400, headers });
+      }
+      const { error: saveError } = await admin.rpc('save_exam_attempt_answers', {
+        target_attempt_id: body.attemptId,
+        candidate_code: code,
+        target_device_token_hash: await sha256Hex(body.deviceToken),
+        answers_input: body.answers,
+      });
+      if (saveError) {
+        if (saveError.code === '22023') return Response.json({ error: saveError.message }, { status: 409, headers });
+        throw saveError;
+      }
+      return Response.json({ saved: true }, { headers });
+    }
+
     if (body?.action === 'attempt-state') {
       if (typeof body.attemptId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.attemptId)) {
         return Response.json({ error: 'Invalid attempt' }, { status: 400, headers });
       }
       const { data: attempt, error: attemptError } = await admin.from('exam_attempts')
-        .select('exam_id, access_code_id, locked_at, warning_count, completed_at')
+        .select('exam_id, access_code_id, locked_at, warning_count, completed_at, closed_at, started_at, duration_minutes, paused_duration_seconds, paused_at')
         .eq('id', body.attemptId).maybeSingle();
       if (attemptError) throw attemptError;
       if (!attempt) return Response.json({ found: false }, { headers });
@@ -76,13 +120,23 @@ Deno.serve(async (request) => {
       if (examError) throw examError;
       if (accessError) throw accessError;
       if (!access || access.code !== code) return Response.json({ found: false }, { headers });
+      let remainingSeconds: number | null = null;
+      if (attempt.duration_minutes) {
+        const elapsedEnd = attempt.paused_at ? new Date(attempt.paused_at).getTime() : Date.now();
+        const elapsed = Math.max(0, Math.floor((elapsedEnd - new Date(attempt.started_at).getTime()) / 1000)
+          - Number(attempt.paused_duration_seconds || 0));
+        remainingSeconds = Math.max(0, Number(attempt.duration_minutes) * 60 - elapsed);
+      }
       return Response.json({
         found: true,
         examStatus: exam?.status ?? 'archived',
         codeValid: access.is_active && (!access.expires_at || new Date(access.expires_at).getTime() > Date.now()),
         locked: Boolean(attempt.locked_at),
         completed: Boolean(attempt.completed_at),
+        closed: Boolean(attempt.closed_at),
         warningCount: attempt.warning_count,
+        durationMinutes: attempt.duration_minutes,
+        remainingSeconds,
       }, { headers });
     }
 
@@ -96,7 +150,8 @@ Deno.serve(async (request) => {
     }
     if (body?.action === 'check') return Response.json(resolution ?? { valid: false }, { headers });
     if (body?.action === 'start') {
-      if (!resolution?.valid || resolution.legacy || !body.student || !Array.isArray(body.questions)) {
+      if (!resolution?.valid || resolution.legacy || !body.student || !Array.isArray(body.questions)
+        || typeof body.deviceToken !== 'string' || body.deviceToken.length < 32 || body.deviceToken.length > 128) {
         return Response.json({ error: 'Exam attempt cannot start' }, { status: 409, headers });
       }
       const { data: startAllowed, error: startRateLimitError } = await admin.rpc('consume_access_attempt', {
@@ -105,7 +160,7 @@ Deno.serve(async (request) => {
       });
       if (startRateLimitError) throw startRateLimitError;
       if (!startAllowed) return Response.json({ error: 'Too many attempts started' }, { status: 429, headers });
-      const { data: attemptId, error: startError } = await admin.rpc('start_exam_attempt', {
+      const { data: attemptId, error: startError } = await admin.rpc('start_exam_attempt_v2', {
         candidate_code: code,
         student_name_input: body.student.name,
         student_number_input: body.student.id,
@@ -113,12 +168,38 @@ Deno.serve(async (request) => {
         track_input: body.student.track,
         section_input: body.student.section,
         presented_questions_input: body.questions,
+        device_token_hash_input: await sha256Hex(body.deviceToken),
       });
       if (startError) {
         if (startError.code === '22023') return Response.json({ error: startError.message }, { status: 409, headers });
         throw startError;
       }
-      return Response.json({ started: true, attemptId, examId: resolution.examId }, { headers });
+      const { data: attempt, error: attemptReadError } = await admin.from('exam_attempts')
+        .select('id, exam_id, exam_revision, presented_questions_json, answers_json, started_at, duration_minutes, paused_duration_seconds, paused_at, locked_at, warning_count')
+        .eq('id', attemptId).single();
+      if (attemptReadError) throw attemptReadError;
+      const { data: revision, error: revisionError } = await admin.from('exam_revisions')
+        .select('title').eq('exam_id', attempt.exam_id).eq('revision', attempt.exam_revision).single();
+      if (revisionError) throw revisionError;
+      const elapsedEnd = attempt.paused_at ? new Date(attempt.paused_at).getTime() : Date.now();
+      const elapsed = Math.max(0, Math.floor((elapsedEnd - new Date(attempt.started_at).getTime()) / 1000)
+        - Number(attempt.paused_duration_seconds || 0));
+      const remainingSeconds = attempt.duration_minutes == null
+        ? null : Math.max(0, Number(attempt.duration_minutes) * 60 - elapsed);
+      return Response.json({
+        started: true,
+        attemptId,
+        examId: attempt.exam_id,
+        examTitle: revision.title,
+        revision: attempt.exam_revision,
+        questions: attempt.presented_questions_json,
+        answers: attempt.answers_json || {},
+        durationMinutes: attempt.duration_minutes,
+        remainingSeconds,
+        paused: Boolean(attempt.paused_at),
+        locked: Boolean(attempt.locked_at),
+        warningCount: attempt.warning_count,
+      }, { headers });
     }
     if (body?.action === 'submit') {
       if (resolution.legacy) {

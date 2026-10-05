@@ -87,6 +87,41 @@ export function exportSingleResultCsv(result) {
   downloadCsv(rows, `تقرير-${result.student_name}.csv`);
 }
 
+export function exportExamGradesCsv({ exam, roster = [], results = [] }) {
+  const byNumber = new Map();
+  for (const result of results) {
+    const key = String(result.student_number || '').trim();
+    if (!key) continue;
+    const previous = byNumber.get(key);
+    if (!previous || new Date(result.created_at || 0) > new Date(previous.created_at || 0)) byNumber.set(key, result);
+  }
+  const rows = [['رقم ESE', 'اسم الطالب بالعربية', 'Student name (English)', 'الصف', 'المسار', 'الشعبة', 'الدرجة']];
+  const seen = new Set();
+  for (const student of roster) {
+    const number = String(student.student_number || '').trim();
+    if (!number) continue;
+    seen.add(number);
+    const result = byNumber.get(number);
+    rows.push([
+      number,
+      student.full_name_ar || student.full_name || result?.student_name || '',
+      student.full_name_en || '',
+      student.grade || exam.target_grade || '',
+      student.track || exam.target_track || '',
+      student.section || exam.target_section || '',
+      result ? `${result.score}/${result.total}` : 'لم يسلّم',
+    ]);
+  }
+  for (const result of results) {
+    const number = String(result.student_number || '').trim();
+    if (number && seen.has(number)) continue;
+    rows.push([
+      number || '—', result.student_name || '', '', result.grade || '', result.track || '', result.section || '', `${result.score}/${result.total}`,
+    ]);
+  }
+  downloadCsv(rows, `درجات-${String(exam.title || 'الاختبار').replace(/[\\/:*?"<>|]/g, '-')}.csv`);
+}
+
 function safeParse(str, fallback) {
   try {
     return (typeof str === 'string' ? JSON.parse(str || '') : str) || fallback;

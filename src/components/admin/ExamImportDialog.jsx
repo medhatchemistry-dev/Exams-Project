@@ -4,9 +4,11 @@ import { supabase } from '@/api/supabaseClient';
 import { GRADE_LABELS, STRUCTURE } from '@/lib/academicStructure';
 import { ACCESS_CODE_LENGTHS, generateAccessCode } from '@/lib/examAccessCode';
 import { parseExamHtml, sanitizeExamBanks } from '@/lib/examImport';
+import { embedExamRemoteImages } from '@/lib/examImportAssets';
 import { getBalancedQuestionCounts, getQuestionGroups, MAX_EXAM_QUESTION_COUNT, selectBalancedQuestions } from '@/lib/examQuestionSelection';
 import { saveExam } from '@/lib/examRepository';
 import ExamPreview from './ExamPreview';
+import ExamQuestionEditor from './ExamQuestionEditor';
 
 const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 
@@ -35,6 +37,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
   const [grade, setGrade] = useState('');
   const [track, setTrack] = useState('');
   const [section, setSection] = useState('');
+  const [durationMinutes, setDurationMinutes] = useState('');
   const [expiryMode, setExpiryMode] = useState('unlimited');
   const [expiresAt, setExpiresAt] = useState('');
   const [questionCount, setQuestionCount] = useState(25);
@@ -88,15 +91,16 @@ export default function ExamImportDialog({ onClose, onImported }) {
     setSourceLabel(nextFile.name);
     setTitle((current) => current || nextFile.name.replace(/\.(html?|pdf)$/i, '').replace(/[-_]+/g, ' ').trim());
     if (!isHtml) return;
+    setBusy(true);
     try {
-      const parsed = parseExamHtml(await nextFile.text(), nextFile.name);
+      const parsed = await embedExamRemoteImages(parseExamHtml(await nextFile.text(), nextFile.name), '');
       setPreview(parsed);
       selectInitialBank(parsed);
       setInitialQuestionCount(parsed);
     } catch (parseError) {
       console.error('Exam HTML import validation failed:', parseError);
       setError(parseError.message || 'لم أستطع قراءة ملف HTML.');
-    }
+    } finally { setBusy(false); }
   };
 
   const inspectUrl = async () => {
@@ -111,16 +115,27 @@ export default function ExamImportDialog({ onClose, onImported }) {
     }
     setBusy(true);
     try {
-      const response = await fetch(parsedUrl.href, { method: 'GET', mode: 'cors', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(15_000) });
-      if (!response.ok) throw new Error(`رد الموقع برمز ${response.status}.`);
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) throw new Error('الرابط لا يعرض صفحة HTML. ارفع ملف HTML أو PDF بدلاً منه.');
-      const source = await response.text();
+      let source;
+      let baseUrl = parsedUrl.href;
+      try {
+        const response = await fetch(parsedUrl.href, { method: 'GET', mode: 'cors', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(12_000) });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) throw new Error('The link is not HTML.');
+        source = await response.text();
+        baseUrl = response.url || parsedUrl.href;
+      } catch {
+        const { data, error: remoteError } = await supabase.functions.invoke('fetch-exam-source', { body: { url: parsedUrl.href } });
+        if (remoteError) throw new Error(data?.error || 'تعذر تحميل صفحة الموقع من الخادم.');
+        if (data?.error || typeof data?.source !== 'string') throw new Error(data?.error || 'لم يعرض الموقع صفحة HTML ثابتة.');
+        source = data.source;
+        baseUrl = data.baseUrl || parsedUrl.href;
+      }
       if (new TextEncoder().encode(source).byteLength > 5 * 1024 * 1024) throw new Error('صفحة المصدر أكبر من 5 MiB. احفظ بنك الأسئلة في ملف HTML أصغر.');
-      const parsed = parseExamHtml(source, 'source.html');
+      const parsed = await embedExamRemoteImages(parseExamHtml(source, 'source.html', baseUrl), baseUrl);
       setPreview(parsed);
-      setSourceLabel(parsedUrl.hostname);
-      setTitle((current) => current || parsedUrl.hostname.replace(/^www\./, ''));
+      setSourceLabel(new URL(baseUrl).hostname);
+      setTitle((current) => current || new URL(baseUrl).hostname.replace(/^www\./, ''));
       selectInitialBank(parsed);
       setInitialQuestionCount(parsed);
     } catch (loadError) {
@@ -144,6 +159,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
     setError('');
     if (!title.trim()) { setError('اكتب اسم الاختبار.'); return; }
     if (!grade || !track || !section) { setError('اختر الصف والمسار والشعبة المستهدفة.'); return; }
+    if (durationMinutes && (!Number.isInteger(Number(durationMinutes)) || Number(durationMinutes) < 1 || Number(durationMinutes) > 480)) { setError('أدخل مدة بين دقيقة واحدة و480 دقيقة، أو اتركها فارغة.'); return; }
     if (expiryMode === 'timed' && (!expiresAt || new Date(expiresAt) <= new Date())) { setError('اختر وقت انتهاء مستقبلياً.'); return; }
     let parsed = preview;
     if (file?.name.toLowerCase().endsWith('.pdf')) {
@@ -197,6 +213,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
           target_grade: grade,
           target_track: track,
           target_section: section,
+          duration_minutes: durationMinutes ? Number(durationMinutes) : null,
         });
         setSavedExam(exam);
       }
@@ -257,11 +274,12 @@ export default function ExamImportDialog({ onClose, onImported }) {
             <input className="sr-only" type="file" accept=".html,.htm,.pdf,text/html,application/pdf" onChange={(event) => acceptFile(event.target.files?.[0])} />
           </label> : <div className="space-y-3 rounded-2xl border p-5" style={{ borderColor: 'var(--mol-line-strong)' }}>
             <label className="mol-label block">رابط صفحة الاختبار<input dir="ltr" className="mol-input mt-2 text-left" type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://school.example/exam.html" /></label>
-            <p className="text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>يقرأ النظام HTML الأولي للصفحة بأمان ولا يشغّل JavaScript. إذا منع الموقع القراءة المباشرة، ارفع نسخة HTML محفوظة.</p>
+            <p className="text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>يدعم صفحات HTML العامة، بما فيها مواقع Netlify. يقرأ HTML الثابت ولا يشغّل JavaScript. الروابط التي تحتاج تسجيل دخول أو تولّد الأسئلة داخل JavaScript غير مدعومة.</p>
             <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-4 py-2" onClick={inspectUrl} disabled={busy || !url.trim()}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Globe size={16} />} فحص الرابط</button>
           </div>}
-          {file?.name.toLowerCase().endsWith('.pdf') && <p className="rounded-xl p-3 text-sm font-bold" style={{ background: 'var(--mol-cobalt-soft)', color: 'var(--mol-cobalt)' }}>يقرأ PDF النصي المنظم الذي يحتوي خيارات A/B/C/D أو أ/ب/ج/د ومفتاح إجابة صريحاً. لا يخمّن النظام الإجابات المفقودة.</p>}
+          {file?.name.toLowerCase().endsWith('.pdf') && <p className="rounded-xl p-3 text-sm font-bold" style={{ background: 'var(--mol-cobalt-soft)', color: 'var(--mol-cobalt)' }}>يقرأ PDF النصي المنظم، كما يحوّل PDF المصوّر إلى معاينات صفحات قابلة للتحرير. يجب إدخال الأسئلة والخيارات وتحديد مفتاح الإجابة يدوياً عند استخدام المعاينات؛ لا يخمّن النظام الإجابات.</p>}
           {preview && <div className="flex items-start gap-3 rounded-xl p-4" style={{ background: 'var(--mol-green-soft)', color: 'var(--mol-green)' }}><CheckCircle2 size={20} className="mt-0.5 shrink-0" /><div><p className="font-extrabold">تم العثور على بنك أسئلة</p><p className="mt-1 text-sm font-bold">{preview.bankSummaries.map((item) => `${item.bankKey}: ${item.questionCount}`).join(' · ')}</p></div></div>}
+          {preview?.unresolvedImageCount > 0 && <p role="status" className="rounded-xl p-3 text-sm font-bold" style={{ background: 'var(--mol-amber-soft)', color: 'var(--mol-amber)' }}>تعذر تضمين {preview.unresolvedImageCount} صورة من الموقع. راجع معاينة الصور أو ارفع HTML مع صور مضمّنة قبل النشر.</p>}
         </div>}
 
         {step === 1 && <div className="space-y-5">
@@ -271,6 +289,7 @@ export default function ExamImportDialog({ onClose, onImported }) {
             <label className="mol-label">المسار<select className="mol-input mt-1" value={track} disabled={!grade} onChange={(event) => { setTrack(event.target.value); setSection(''); setPreview(file?.name.toLowerCase().endsWith('.pdf') ? null : preview); }}><option value="">اختر المسار</option>{tracks.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
             <label className="mol-label">الشعبة<select className="mol-input mt-1" value={section} disabled={!track} onChange={(event) => setSection(event.target.value)}><option value="">اختر الشعبة</option>{sections.map((value) => <option key={value} value={value}>شعبة {value}</option>)}</select></label>
           </div>
+          <label className="mol-label block">مدة الاختبار بالدقائق (اختياري)<input className="mol-input mt-1 max-w-48" type="number" min="1" max="480" step="1" value={durationMinutes} onChange={(event) => setDurationMinutes(event.target.value)} placeholder="بدون حد زمني" /><span className="mt-1 block text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>هذه مدة الإجابة. انتهاء رمز الدخول إعداد منفصل.</span></label>
           {preview && bankKey && <div className="mol-card flex items-center justify-between gap-3 p-4"><span className="font-bold">بنك الصف والمسار المحدد</span><strong>{chosenQuestions.length} سؤال · {bankKey}</strong></div>}
           {chosenQuestions.length > 0 && <div className="mol-card space-y-3 p-4">
             <label className="mol-label block">عدد الأسئلة في الاختبار<input className="mol-input mt-1 max-w-40" type="number" min="1" max={availableQuestionCount} step="1" value={selectedQuestionCount || ''} disabled={Boolean(savedExam)} onChange={(event) => setQuestionCount(Math.max(1, Number(event.target.value) || 1))} /><span className="mt-1 block text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>اختر من 1 إلى {availableQuestionCount} سؤالاً من أصل {chosenQuestions.length}. عند تعدد الأقسام، يوزّعها النظام بالتساوي بينها.</span></label>
@@ -286,7 +305,9 @@ export default function ExamImportDialog({ onClose, onImported }) {
         </div>}
 
         {step === 2 && <div className="space-y-4">
-          <div className="mol-card p-5"><p className="text-xs font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>مراجعة قبل النشر</p><h4 className="mt-1 text-xl font-extrabold">{title}</h4><p className="mt-2 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{sourceLabel} · {GRADE_LABELS[grade]} · {track} · شعبة {section}</p><p className="mt-4 font-extrabold">{reviewQuestions.length} سؤالاً من أصل {chosenQuestions.length}</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>رمز الدخول: {accessCodeLength} أرقام</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{expiryMode === 'timed' ? `ينتهي ${new Date(expiresAt).toLocaleString('ar')}` : 'يبقى مفتوحاً حتى توقفه يدوياً'}</p></div>
+          <div className="mol-card p-5"><p className="text-xs font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>مراجعة قبل النشر</p><h4 className="mt-1 text-xl font-extrabold">{title}</h4><p className="mt-2 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{sourceLabel} · {GRADE_LABELS[grade]} · {track} · شعبة {section}</p><p className="mt-4 font-extrabold">{reviewQuestions.length} سؤالاً من أصل {chosenQuestions.length}</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>مدة الاختبار: {durationMinutes ? `${durationMinutes} دقيقة` : 'بدون حد زمني'} · رمز الدخول: {accessCodeLength} أرقام</p><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{expiryMode === 'timed' ? `انتهاء الرمز: ${new Date(expiresAt).toLocaleString('ar')}` : 'رمز الدخول يبقى مفتوحاً حتى توقفه يدوياً'}</p></div>
+          {reviewQuestions.some((question) => !Number.isInteger(question.answer) || question.options.some((option) => !option.en)) && <p className="rounded-xl p-3 text-sm font-bold" style={{ background: 'var(--mol-amber-soft)', color: 'var(--mol-amber)' }}>أكمل مفتاح الإجابة وأضف الترجمات الإنجليزية التي تحتاجها من محرر الأسئلة قبل النشر.</p>}
+          <ExamQuestionEditor questions={reviewQuestions} onChange={setReviewQuestions} />
           <ExamPreview questions={reviewQuestions} />
           <p className="rounded-xl p-4 text-sm font-bold" style={{ background: 'var(--mol-amber-soft, var(--mol-surface-2))', color: 'var(--mol-amber)' }}>تفعيل هذا الاختبار يوقف رمز الاختبار النشط الحالي. تستطيع إيقاف الرمز الجديد أو إنهاء الاختبار لاحقاً.</p>
           {savedExam && <p className="font-bold" style={{ color: 'var(--mol-amber)' }}>تم حفظ الاختبار بالفعل. أعد المحاولة لإصدار الرمز دون إنشاء نسخة أخرى.</p>}

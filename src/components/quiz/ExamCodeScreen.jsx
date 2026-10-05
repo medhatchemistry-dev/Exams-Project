@@ -25,7 +25,7 @@ export default function ExamCodeScreen({ onContinue }) {
     <main className="mol-wrap max-w-5xl mx-auto px-4 py-8 md:py-14">
       <header className="mol-card overflow-hidden mb-7 mol-fade-up">
         <div className="px-5 py-8 md:py-12 text-center">
-          <img src="/logo.svg" alt="شعار منصة لغة الكيمياء" className="mx-auto mb-4 h-32 w-32 object-contain drop-shadow-sm md:h-40 md:w-40" />
+          <img src="/icon.png" alt="شعار منصة لغة الكيمياء" className="mx-auto mb-4 h-32 w-32 object-contain drop-shadow-sm md:h-40 md:w-40" />
           <div className="mol-chip inline-flex items-center gap-2 px-4 py-1.5 mb-3 text-xs font-extrabold" style={{ color: 'var(--mol-green)', borderColor: 'var(--mol-green)' }}>
             <FlaskConical size={14} /> مادة الكيمياء التفاعلية
           </div>
@@ -68,7 +68,7 @@ export default function ExamCodeScreen({ onContinue }) {
           </button>
         </form>
         <div className="mt-6 flex items-center justify-between gap-3 border-t pt-5 text-sm font-bold" style={{ borderColor: 'var(--mol-line-strong)', color: 'var(--mol-muted)' }}>
-          <span>المدة: 45 دقيقة</span>
+          <span>تظهر مدة الاختبار بعد التحقق من الرمز</span>
           <Link to="/admin" className="hover:underline" style={{ color: 'var(--mol-cobalt)' }}>دخول المعلم</Link>
         </div>
       </section>

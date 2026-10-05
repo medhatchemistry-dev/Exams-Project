@@ -9,24 +9,33 @@ function fmt(s) {
   return `${m}:${sec < 10 ? '0' : ''}${sec}`;
 }
 
-export default function QuizScreen({ student, examTitle, questions, answers, onAnswer, onSubmit, onAlert, onRetryCapabilities, paused = false, locked = false, unavailable = false, browserCapabilities = { fullscreen: null, audio: null } }) {
-  const [timeLeft, setTimeLeft] = useState(45 * 60);
+export default function QuizScreen({ student, examTitle, questions, answers, onAnswer, onSubmit, onAlert, onRetryCapabilities, durationMinutes = null, remainingSeconds = null, paused = false, locked = false, unavailable = false, browserCapabilities = { fullscreen: null, audio: null } }) {
+  const [timeLeft, setTimeLeft] = useState(remainingSeconds);
   const [current, setCurrent] = useState(0);
   const timerRef = useRef(null);
   const warned = useRef({ 30: false, 15: false });
   const active = !paused && !locked && !unavailable;
 
   useEffect(() => {
-    if (!active) return undefined;
+    setTimeLeft(remainingSeconds);
+  }, [remainingSeconds]);
+
+  useEffect(() => {
+    if (durationMinutes == null) {
+      setTimeLeft(null);
+      return undefined;
+    }
+    if (!active || remainingSeconds == null) return undefined;
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
+        if (t == null) return null;
         const nt = t - 1;
-        if (nt === 30 * 60 && !warned.current[30]) {
+        if (nt === Math.floor(durationMinutes * 60 * 2 / 3) && !warned.current[30]) {
           warned.current[30] = true;
-          onAlert('تنبيه الوقت', 'مضت 15 دقيقة، بقي لديك 30 دقيقة على نهاية الاختبار.');
-        } else if (nt === 15 * 60 && !warned.current[15]) {
+          onAlert('تنبيه الوقت', `بقي لديك ${fmt(nt)} على نهاية الاختبار.`);
+        } else if (nt === Math.floor(durationMinutes * 60 / 3) && !warned.current[15]) {
           warned.current[15] = true;
-          onAlert('تنبيه هام', 'مضت 30 دقيقة، بقي لديك 15 دقيقة فقط على نهاية الاختبار!');
+          onAlert('تنبيه هام', `بقي لديك ${fmt(nt)} على نهاية الاختبار.`);
         }
         if (nt <= 0) {
           clearInterval(timerRef.current);
@@ -38,9 +47,9 @@ export default function QuizScreen({ student, examTitle, questions, answers, onA
     }, 1000);
     return () => clearInterval(timerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [active, durationMinutes, remainingSeconds]);
 
-  const lowTime = timeLeft <= 5 * 60;
+  const lowTime = timeLeft !== null && timeLeft <= 5 * 60;
 
   const jump = (i) => {
     setCurrent(i);
@@ -66,13 +75,13 @@ export default function QuizScreen({ student, examTitle, questions, answers, onA
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
-          <div
+          {timeLeft !== null && <div
             className="mol-chip inline-flex items-center gap-2 px-3 py-2 font-extrabold"
             style={{ color: lowTime ? 'var(--mol-red)' : 'var(--mol-green)', borderColor: lowTime ? 'var(--mol-red)' : 'var(--mol-green)' }}
           >
             <Clock size={16} />
             <span className="tabular-nums">{fmt(timeLeft)}</span>
-          </div>
+          </div>}
           <button
             className="mol-btn mol-btn-ghost px-3 py-2 text-sm inline-flex items-center gap-1.5"
             disabled={!active}

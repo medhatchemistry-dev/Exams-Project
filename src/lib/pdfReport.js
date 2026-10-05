@@ -1,40 +1,87 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
-// Multi-page capture that paginates at question boundaries ([data-qblock]) so a
-// question is never cut mid-line. Used for the detailed correction report.
+async function waitForReportAssets(el) {
+  if (document.fonts?.ready) await document.fonts.ready;
+  const images = Array.from(el.querySelectorAll('img'));
+  await Promise.all(images.map(async (image) => {
+    image.loading = 'eager';
+    if (!image.complete) await new Promise((resolve) => {
+      const timeout = window.setTimeout(resolve, 12_000);
+      const finish = () => { window.clearTimeout(timeout); resolve(); };
+      image.addEventListener('load', finish, { once: true });
+      image.addEventListener('error', finish, { once: true });
+    });
+    if (image.complete && image.naturalWidth > 0 && image.decode) {
+      try { await image.decode(); } catch { /* broken images are reported below */ }
+    }
+  }));
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  const missingImages = images.filter((image) => image.naturalWidth === 0);
+  if (missingImages.length) throw new Error(`${missingImages.length} image(s) could not be loaded for the report.`);
+}
+
+async function captureReportSection(element) {
+  return html2canvas(element, {
+    scale: 2,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+    allowTaint: false,
+    logging: false,
+    scrollX: 0,
+    scrollY: 0,
+    windowWidth: Math.max(element.scrollWidth, element.clientWidth),
+  });
+}
+
+// Capture the report by header, question, and footer. Page breaks are chosen
+// between sections, so the old full-height screenshot slicing can't leave gaps.
 export async function downloadPaginatedPdf(el, filename) {
-  const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+  await waitForReportAssets(el);
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const pxPerMm = canvas.width / pageW;
-  const maxSlice = Math.floor(pageH * pxPerMm);
-  const boundaries = Array.from(el.querySelectorAll('[data-qblock]')).map((b) => Math.round(b.offsetTop * 2));
-  let y = 0;
-  let page = 0;
-  while (y < canvas.height) {
-    let end = Math.min(y + maxSlice, canvas.height);
-    for (let j = boundaries.length - 1; j >= 0; j--) {
-      const b = boundaries[j];
-      if (b <= y) break;
-      if (b <= end && end - b <= maxSlice * 0.35) {
-        end = b;
-        break;
+  const margin = 11;
+  const contentW = pageW - margin * 2;
+  const contentH = pageH - margin * 2;
+  const sections = [el.firstElementChild, ...el.querySelectorAll('[data-qblock]'), el.lastElementChild]
+    .filter((section) => section instanceof HTMLElement && section.offsetHeight > 0);
+  let y = margin;
+  for (const section of sections) {
+    const canvas = await captureReportSection(section);
+    const sectionH = (canvas.height / canvas.width) * contentW;
+    if (sectionH > contentH) {
+      if (y > margin) {
+        pdf.addPage();
+        y = margin;
       }
+      const maxPixels = Math.floor((contentH / contentW) * canvas.width);
+      let sourceY = 0;
+      while (sourceY < canvas.height) {
+        const sliceH = Math.min(maxPixels, canvas.height - sourceY);
+        const slice = document.createElement('canvas');
+        slice.width = canvas.width;
+        slice.height = sliceH;
+        const ctx = slice.getContext('2d');
+        if (!ctx) throw new Error('Unable to create a PDF page canvas.');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, slice.width, slice.height);
+        ctx.drawImage(canvas, 0, sourceY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+        if (sourceY > 0) pdf.addPage();
+        const sliceMm = (sliceH / slice.width) * contentW;
+        pdf.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, contentW, sliceMm);
+        sourceY += sliceH;
+      }
+      y = pageH - margin;
+      continue;
     }
-    const sliceH = end - y;
-    const slice = document.createElement('canvas');
-    slice.width = canvas.width;
-    slice.height = sliceH;
-    const sctx = slice.getContext('2d');
-    sctx.fillStyle = '#ffffff';
-    sctx.fillRect(0, 0, slice.width, slice.height);
-    sctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-    if (page > 0) pdf.addPage();
-    pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageW, sliceH / pxPerMm);
-    y = end;
-    page++;
+
+    if (y > margin && y + sectionH > pageH - margin) {
+      pdf.addPage();
+      y = margin;
+    }
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, y, contentW, sectionH);
+    y += sectionH + 3;
   }
   pdf.save(filename);
 }

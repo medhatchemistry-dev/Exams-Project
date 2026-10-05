@@ -46,7 +46,7 @@ export default function AdminLayout() {
       <header className="sticky top-0 z-40 border-b bg-white/95 backdrop-blur" style={{ borderColor: 'var(--mol-line-strong)' }}>
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="" className="h-10 w-10 object-contain" />
+            <img src="/icon.png" alt="" className="h-10 w-10 object-contain" />
             <div>
               <p className="text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>منصة لغة الكيمياء</p>
               <h1 className="font-extrabold">لوحة المعلم</h1>

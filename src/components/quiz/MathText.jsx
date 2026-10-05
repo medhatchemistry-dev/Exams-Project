@@ -19,9 +19,9 @@ function isolateLtrRuns(html) {
   });
 }
 
-function renderMath(tex) {
+function renderMath(tex, displayMode = false) {
   try {
-    return katex.renderToString(tex, { throwOnError: false, output: 'html' });
+    return katex.renderToString(tex, { throwOnError: false, output: 'html', displayMode });
   } catch (e) {
     return tex;
   }
@@ -31,27 +31,38 @@ export default function MathText({ children, className = '' }) {
   if (children == null) return null;
   const text = String(children);
   const parts = [];
-  const re = /\\\(([^]*?)\\\)/g;
+  const re = /\\\[([\s\S]*?)\\\]|\$\$([\s\S]*?)\$\$|\\\(([\s\S]*?)\\\)/g;
   let last = 0;
   let m;
   let key = 0;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push({ type: 'html', value: text.slice(last, m.index), key: key++ });
-    parts.push({ type: 'math', value: m[1], key: key++ });
+    const display = m[1] !== undefined || m[2] !== undefined;
+    parts.push({ type: 'math', value: m[1] ?? m[2] ?? m[3], display, key: key++ });
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push({ type: 'html', value: text.slice(last), key: key++ });
 
   return (
-    <span className={className}>
+    <span className={className} style={{ display: 'contents' }}>
       {parts.map((p) =>
-        p.type === 'math' ? (
+      p.type === 'math' ? (
+        p.display ? (
+          <div
+            key={p.key}
+            dir="ltr"
+            className="question-display-math"
+            style={{ direction: 'ltr', unicodeBidi: 'isolate', overflowX: 'auto', textAlign: 'center' }}
+            dangerouslySetInnerHTML={{ __html: renderMath(p.value, true) }}
+          />
+        ) : (
           <span
             key={p.key}
             dir="ltr"
             style={{ direction: 'ltr', unicodeBidi: 'isolate', display: 'inline-block' }}
             dangerouslySetInnerHTML={{ __html: renderMath(p.value) }}
           />
+        )
         ) : (
           <span key={p.key} dangerouslySetInnerHTML={{ __html: isolateLtrRuns(p.value) }} />
         )

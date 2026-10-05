@@ -107,6 +107,7 @@ The app calls four functions:
 - `teacher-login` verifies the teacher password, applies rate limiting, and creates the teacher Auth session.
 - `jev-import-assist` maps unfamiliar student spreadsheet column labels. It requires a signed-in teacher and sends only header labels and unmapped field names to the server-side Jev request; roster rows never go to Jev.
 - `verify-exam-reentry` checks the existing teacher password and unlocks only the specified locked attempt; it does not create an Auth session.
+- `fetch-exam-source` lets signed-in teachers import bounded public HTTPS HTML and image assets for review. It validates teacher access, DNS results, and redirects, rejects private addresses, and never runs imported JavaScript.
 
 Imported exam files use deterministic HTML/PDF parsing and teacher review. Jev's `jev-latest` API accepts bounded structured decision questions, not exam files or a reliable question-bank parser, so this workflow does not send exam content to Jev or use it to create questions, answer keys, or publication state. Roster header mapping remains the only Jev-assisted workflow.
 
