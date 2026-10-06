@@ -4,7 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { STRUCTURE, GRADE_LABELS } from '@/lib/academicStructure';
 import OtherStudentForm from './OtherStudentForm';
 
-export default function StudentPicker({ onStart, targetClass = null }) {
+export default function StudentPicker({ onStart, targetClass = null, accessCode = '' }) {
   const [grade, setGrade] = useState(targetClass?.grade || '');
   const [track, setTrack] = useState(targetClass?.track || '');
   const [section, setSection] = useState(targetClass?.section || '');
@@ -34,16 +34,11 @@ export default function StudentPicker({ onStart, targetClass = null }) {
     let active = true;
     const loadStudents = async () => {
       try {
-        const { data, error } = await supabase
-          .from('students')
-          .select('id, full_name, full_name_ar, full_name_en, student_number, grade, track, section')
-          .eq('grade', grade)
-          .eq('track', track)
-          .eq('section', section)
-          .order('full_name')
-          .limit(500);
+        const { data, error } = await supabase.functions.invoke('validate-exam-code', {
+          body: { action: 'roster', code: accessCode },
+        });
         if (error) throw error;
-        if (active) setStudents(data || []);
+        if (active) setStudents(data?.students || []);
       } catch (error) {
         if (!active) return;
         console.error('Student roster load failed:', error);
@@ -55,7 +50,7 @@ export default function StudentPicker({ onStart, targetClass = null }) {
     loadStudents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { active = false; };
-  }, [grade, track, section]);
+  }, [grade, track, section, accessCode]);
 
   const selected = students.find((s) => s.student_number === selectedId);
 

@@ -160,6 +160,8 @@ For imported exam attempts, the third recorded visibility, window-blur, or fulls
 
 Before fullscreen, students must play and confirm the exam sound check. Browsers can still deny fullscreen, and students can exit it. A website cannot unmute an operating system or device, control its physical volume, or detect every browser or operating-system shortcut.
 
+Student roster records are not readable through the anonymous Supabase API. The student picker obtains only the roster for the class assigned to its active exam code; exams without a specific class use manual student entry. Signed-in administrators need an explicit admin permission to read the roster.
+
 ## Project structure
 
 ```text

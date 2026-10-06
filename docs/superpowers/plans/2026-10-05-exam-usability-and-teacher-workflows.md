@@ -109,6 +109,7 @@ Improve exam editing, student recovery, question presentation, imports, result e
 - [x] Set the owner password to the requested value, including its final space, and verify a fresh live login.
 - [x] Verify a temporary grades-only account can sign in but cannot query exam answer keys or issue exam access codes; remove it after the check.
 - [x] Clear exam, code, student, attempt, grade, revision, activity, legacy question-bank, and rate-limit data while retaining the owner and both password hashes.
+- [x] Remove anonymous direct access to student names/numbers; the student picker now receives only the class assigned to a currently active exam code, and unassigned/legacy exams use manual entry.
 - [ ] Complete visual, browser-based admin-to-student end-to-end checks.
 
 ## Likely files and systems

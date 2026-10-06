@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { FlaskConical, Phone, ShieldCheck, Settings } from 'lucide-react';
 import StudentPicker from './StudentPicker';
 
-export default function LoginScreen({ onStart, targetClass = null, durationMinutes = null }) {
+export default function LoginScreen({ onStart, targetClass = null, durationMinutes = null, accessCode = '' }) {
   return (
     <div className="mol-wrap max-w-5xl mx-auto px-4 py-10 md:py-16">
       {/* Hero */}
@@ -55,7 +55,7 @@ export default function LoginScreen({ onStart, targetClass = null, durationMinut
           </div>
         </div>
 
-        <StudentPicker onStart={onStart} targetClass={targetClass} />
+        <StudentPicker onStart={onStart} targetClass={targetClass} accessCode={accessCode} />
 
         <p className="mt-4 text-center text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>
           عند بدء الاختبار يطلب المتصفح ملء الشاشة ويجرّب صوت التنبيه. قد يمنع المتصفح تشغيل الصوت، ولا يستطيع الموقع تجاوز كتم الجهاز أو مستوى صوته.

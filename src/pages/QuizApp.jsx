@@ -758,6 +758,7 @@ export default function QuizApp() {
       onStart={handleStart}
       durationMinutes={validatedExam?.durationMinutes}
       targetClass={null}
+      accessCode={accessCode}
     />
       )}
 

@@ -148,6 +148,29 @@ Deno.serve(async (request) => {
       if (!allowed) return Response.json({ error: 'Too many attempts' }, { status: 429, headers });
       if (body?.action === 'submit') return Response.json({ error: 'Exam access code is inactive or expired' }, { status: 409, headers });
     }
+    if (body?.action === 'roster') {
+      if (!resolution?.valid || resolution.legacy || !resolution.examId) {
+        return Response.json({ students: [] }, { headers });
+      }
+      const { data: allowed, error: rateLimitError } = await admin.rpc('consume_access_attempt', {
+        client_hash: ipHash,
+        attempt_purpose: 'exam_code',
+      });
+      if (rateLimitError) throw rateLimitError;
+      if (!allowed) return Response.json({ error: 'Too many roster requests' }, { status: 429, headers });
+      const { data: exam, error: examError } = await admin.from('exams')
+        .select('target_grade, target_track, target_section').eq('id', resolution.examId).single();
+      if (examError) throw examError;
+      if (!exam.target_grade || !exam.target_track || !exam.target_section) {
+        return Response.json({ students: [] }, { headers });
+      }
+      const { data: students, error: studentsError } = await admin.from('students')
+        .select('id, full_name, full_name_ar, full_name_en, student_number, grade, track, section')
+        .eq('grade', exam.target_grade).eq('track', exam.target_track).eq('section', exam.target_section)
+        .order('full_name').limit(500);
+      if (studentsError) throw studentsError;
+      return Response.json({ students: students ?? [] }, { headers });
+    }
     if (body?.action === 'check') return Response.json(resolution ?? { valid: false }, { headers });
     if (body?.action === 'start') {
       if (!resolution?.valid || resolution.legacy || !body.student || !Array.isArray(body.questions)
