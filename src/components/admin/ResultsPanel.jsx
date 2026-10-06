@@ -6,6 +6,7 @@ import { completeExam } from '@/lib/examRepository';
 import { filterExamsByGrade, getExamNumbers } from '@/lib/examNumbers';
 import { exportResultsCsv } from '@/lib/excelExport';
 import ResultDetailModal from './ResultDetailModal';
+import { useAuth } from '@/lib/AuthContext';
 
 const PAGE_SIZE = 50;
 const EXPORT_BATCH_SIZE = 1000;
@@ -26,6 +27,7 @@ function classLabel(exam) {
 }
 
 export default function ResultsPanel() {
+  const { can } = useAuth();
   const [exams, setExams] = useState([]);
   const [examGradeFilter, setExamGradeFilter] = useState('');
   const [counts, setCounts] = useState({});
@@ -54,7 +56,7 @@ export default function ResultsPanel() {
     setLoading(true);
     setError('');
     try {
-      const { data, error: queryError } = await supabase.from('exams')
+      const { data, error: queryError } = await supabase.from('teacher_exam_summaries')
         .select('id, title, status, target_grade, target_track, target_section, completed_at, created_at')
         .order('created_at', { ascending: false });
       if (queryError) throw queryError;
@@ -148,7 +150,7 @@ export default function ResultsPanel() {
         <>
           <header className="mol-card flex flex-wrap items-center justify-between gap-3 p-5">
             <div className="flex items-start gap-3"><button type="button" aria-label="العودة إلى سجل الاختبارات" className="mol-btn mol-btn-ghost mt-1 grid h-9 w-9 place-items-center p-0" onClick={() => { setExamId(''); setError(''); }}><ArrowRight size={17} /></button><div><p className="text-sm font-extrabold" style={{ color: 'var(--mol-cobalt)' }}>نتائج الاختبار · رقم {selectedExam ? examNumbers.get(String(selectedExam.id)) : '—'}</p><h2 className="text-xl font-extrabold">{selectedExam?.title}</h2><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{classLabel(selectedExam || {})} · {resultCount} إجابة</p></div></div>
-            <div className="flex flex-wrap gap-2">{!selectedExam?.completed_at && <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2" disabled={completing} onClick={markComplete}>{completing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} إنهاء الاختبار</button>}<button type="button" className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-4 py-2.5" onClick={downloadGrades} disabled={resultCount === 0 || exporting}><Download size={17} />{exporting ? 'جارٍ تجهيز الملف…' : 'تنزيل درجات الاختبار'}</button></div>
+            <div className="flex flex-wrap gap-2">{can('manage_exams') && !selectedExam?.completed_at && <button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-2 px-3 py-2" disabled={completing} onClick={markComplete}>{completing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} إنهاء الاختبار</button>}<button type="button" className="mol-btn mol-btn-primary inline-flex items-center gap-2 px-4 py-2.5" onClick={downloadGrades} disabled={resultCount === 0 || exporting}><Download size={17} />{exporting ? 'جارٍ تجهيز الملف…' : 'تنزيل درجات الاختبار'}</button></div>
           </header>
           <div className="mol-card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
             <label className="mol-label">الصف<select className="mol-input mt-1" value={grade} onChange={(event) => { setGrade(event.target.value); setTrack(''); setSection(''); setPage(0); }}><option value="">كل الصفوف</option>{Object.keys(STRUCTURE).map((value) => <option key={value} value={value}>{GRADE_LABELS[value]} ({value})</option>)}</select></label>

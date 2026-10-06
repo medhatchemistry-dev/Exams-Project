@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { supabase, hasTeacherRole } from '@/api/supabaseClient';
+import { supabase, hasTeacherPermission } from '@/api/supabaseClient';
 import { buildExam, selectExamBank } from '@/lib/examExecution';
 import LoginScreen from '@/components/quiz/LoginScreen';
 import QuizScreen from '@/components/quiz/QuizScreen';
@@ -9,6 +9,7 @@ import SecurityOverlay from '@/components/quiz/SecurityOverlay';
 import TeacherReentryDialog from '@/components/quiz/TeacherReentryDialog';
 import { AlertModal, TeacherCodeModal } from '@/components/quiz/AlertModal';
 import ExamCodeScreen from '@/components/quiz/ExamCodeScreen';
+import ExamAudioGate from '@/components/quiz/ExamAudioGate';
 import { isDuplicateViolation, nextWarningState } from '@/lib/examSecurity';
 
 const ATTEMPTS_KEY = 'student_attempts';
@@ -52,6 +53,8 @@ export default function QuizApp() {
   const [examPaused, setExamPaused] = useState(false);
   const [attemptUnavailable, setAttemptUnavailable] = useState(false);
   const [browserCapabilities, setBrowserCapabilities] = useState({ fullscreen: null, audio: null });
+  const [audioHeard, setAudioHeard] = useState(false);
+  const [audioGateError, setAudioGateError] = useState('');
 
   const warningCount = useRef(0);
   const isSubmitting = useRef(false);
@@ -166,17 +169,7 @@ export default function QuizApp() {
     return data;
   }, [accessCode, attemptId]);
 
-  const startBrowserCapabilities = useCallback(() => {
-    let fullscreenPromise;
-    try {
-      if (document.fullscreenElement) fullscreenPromise = Promise.resolve(true);
-      else if (document.documentElement.requestFullscreen) {
-        fullscreenPromise = document.documentElement.requestFullscreen().then(() => true).catch(() => false);
-      } else fullscreenPromise = Promise.resolve(false);
-    } catch {
-      fullscreenPromise = Promise.resolve(false);
-    }
-
+  const startBrowserAudio = useCallback(async () => {
     try {
       if (!alarmCtx.current) {
         const AudioContextConstructor = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
@@ -198,10 +191,31 @@ export default function QuizApp() {
     } catch {
       audioStartPromise.current = Promise.resolve(false);
     }
-
-    fullscreenPromise.then((fullscreen) => setBrowserCapabilities((current) => ({ ...current, fullscreen })));
-    audioStartPromise.current.then((audio) => setBrowserCapabilities((current) => ({ ...current, audio })));
+    const audio = await audioStartPromise.current;
+    setBrowserCapabilities((current) => ({ ...current, audio }));
+    return audio;
   }, []);
+
+  const requestExamFullscreen = useCallback(async () => {
+    let fullscreen = false;
+    try {
+      if (document.fullscreenElement) fullscreen = true;
+      else if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+        fullscreen = Boolean(document.fullscreenElement);
+      }
+    } catch {
+      fullscreen = false;
+    }
+    setBrowserCapabilities((current) => ({ ...current, fullscreen }));
+    return fullscreen;
+  }, []);
+
+  const startBrowserCapabilities = useCallback(async () => {
+    const audio = await startBrowserAudio();
+    if (!audio) return false;
+    return requestExamFullscreen();
+  }, [requestExamFullscreen, startBrowserAudio]);
 
   useEffect(() => {
     if (screen !== 'quiz') return undefined;
@@ -481,6 +495,32 @@ export default function QuizApp() {
     [banks, isExamCodeActive, showAlert, validatedExam, accessCode]
   );
 
+  const beginWithAudioGate = useCallback((info, recoverDevice = false) => {
+    pendingStudent.current = info;
+    pendingDeviceRecovery.current = recoverDevice;
+    setAudioHeard(false);
+    setAudioGateError('');
+    setBrowserCapabilities((current) => ({ ...current, audio: false }));
+    audioStartPromise.current = null;
+    setScreen('audio-gate');
+  }, []);
+
+  const playExamAudioTest = useCallback(async () => {
+    setAudioGateError('');
+    const ready = await startBrowserAudio();
+    if (!ready) setAudioGateError('تعذر تشغيل الصوت. فعّل الصوت في المتصفح والجهاز ثم أعد المحاولة.');
+  }, [startBrowserAudio]);
+
+  const enterExamAfterAudio = useCallback(async () => {
+    if (!browserCapabilities.audio || !audioHeard) return;
+    // Called directly from the student's click after the audio check.
+    await requestExamFullscreen();
+    const info = pendingStudent.current;
+    const recoverDevice = pendingDeviceRecovery.current;
+    pendingDeviceRecovery.current = false;
+    if (info) await beginExam(info, recoverDevice);
+  }, [audioHeard, beginExam, browserCapabilities.audio, requestExamFullscreen]);
+
   const handleStart = useCallback(
     async (info) => {
       if (!info.name || !info.id || !info.grade || !info.track || !info.section) {
@@ -519,28 +559,25 @@ export default function QuizApp() {
         setTeacherModal(true);
         return;
       }
-      startBrowserCapabilities();
-      beginExam(info);
+      beginWithAudioGate(info, false);
     },
-    [beginExam, showAlert, startBrowserCapabilities, validatedExam]
+    [beginWithAudioGate, showAlert, validatedExam, accessCode]
   );
 
   const verifyTeacherCode = useCallback(
     async () => {
-      startBrowserCapabilities();
       const { data: { user } } = await supabase.auth.getUser();
-      if (user && await hasTeacherRole(user.id)) {
+      if (user && await hasTeacherPermission(user.id, 'manage_exams')) {
         setTeacherModal(false);
         const info = pendingStudent.current;
         const recoverDevice = pendingDeviceRecovery.current;
-        pendingDeviceRecovery.current = false;
         showAlert('نجاح', 'تم السماح بمحاولة إضافية بواسطة المعلم. يمكنك بدء المحاولة الآن.');
-        beginExam(info, recoverDevice);
+        beginWithAudioGate(info, recoverDevice);
       } else {
         showAlert('يلزم تسجيل دخول المعلم', 'سجّل الدخول بحساب المعلم المصرّح به من صفحة الإدارة، ثم أعد المحاولة.');
       }
     },
-    [beginExam, showAlert, startBrowserCapabilities]
+    [beginWithAudioGate, showAlert]
   );
 
   const handleAnswer = useCallback((idx, optIdx) => {
@@ -723,6 +760,15 @@ export default function QuizApp() {
       targetClass={null}
     />
       )}
+
+      {screen === 'audio-gate' && <ExamAudioGate
+        audioReady={Boolean(browserCapabilities.audio)}
+        heard={audioHeard}
+        error={audioGateError}
+        onTest={playExamAudioTest}
+        onHeardChange={setAudioHeard}
+        onEnter={enterExamAfterAudio}
+      />}
 
       {screen === 'quiz' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (
         <QuizScreen

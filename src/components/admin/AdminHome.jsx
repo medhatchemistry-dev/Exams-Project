@@ -1,25 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Award, ArrowLeft, BookOpen, ClipboardList, Users } from 'lucide-react';
+import { Award, ArrowLeft, BookOpen, ClipboardList, Settings, Users } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
+import { useAuth } from '@/lib/AuthContext';
 
 const CARDS = [
-  { to: '/admin/scores', title: 'الدرجات', description: 'عرض المحاولات ومراجعة الإجابات وتصدير النتائج.', icon: ClipboardList },
-  { to: '/admin/certificates', title: 'الشهادات', description: 'عرض شهادات الطلاب الحاصلين على الدرجة الكاملة.', icon: Award },
-  { to: '/admin/students', title: 'الطلاب', description: 'إدارة سجل الطلاب وإضافة الطلاب من ملف Excel.', icon: Users },
-  { to: '/admin/exams', title: 'الاختبارات', description: 'استيراد الاختبارات وإصدار رموز الدخول.', icon: BookOpen },
+  { to: '/admin/scores', title: 'الدرجات', description: 'عرض المحاولات ومراجعة الإجابات وتصدير النتائج.', icon: ClipboardList, permission: 'view_grades' },
+  { to: '/admin/certificates', title: 'الشهادات', description: 'عرض شهادات الطلاب الحاصلين على الدرجة الكاملة.', icon: Award, permission: 'view_grades' },
+  { to: '/admin/students', title: 'الطلاب', description: 'إدارة سجل الطلاب وإضافة الطلاب من ملف Excel.', icon: Users, permission: 'manage_students' },
+  { to: '/admin/exams', title: 'الاختبارات', description: 'استيراد الاختبارات وإصدار رموز الدخول.', icon: BookOpen, permission: 'manage_exams' },
+  { to: '/admin/settings', title: 'الإعدادات', description: 'تغيير كلمات المرور وإدارة حسابات المعلمين.', icon: Settings, ownerOnly: true },
 ];
 
 export default function AdminHome() {
+  const { can, isOwner } = useAuth();
   const [counts, setCounts] = useState({ scores: null, students: null, exams: null });
   const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
     Promise.all([
-      supabase.from('exam_results').select('id', { count: 'exact', head: true }),
-      supabase.from('students').select('id', { count: 'exact', head: true }),
-      supabase.from('exams').select('id', { count: 'exact', head: true }).eq('status', 'available'),
+      can('view_grades') ? supabase.from('exam_results').select('id', { count: 'exact', head: true }) : Promise.resolve({ count: null }),
+      can('manage_students') ? supabase.from('students').select('id', { count: 'exact', head: true }) : Promise.resolve({ count: null }),
+      can('manage_exams') ? supabase.from('exams').select('id', { count: 'exact', head: true }).eq('status', 'available') : Promise.resolve({ count: null }),
     ]).then((results) => {
       if (!active) return;
       const failed = results.find((result) => result.error);
@@ -29,7 +32,7 @@ export default function AdminHome() {
       if (active) setError('تعذر تحميل ملخص اللوحة. حاول تحديث الصفحة.');
     });
     return () => { active = false; };
-  }, []);
+  }, [can]);
 
   return (
     <div className="space-y-6">
@@ -46,7 +49,7 @@ export default function AdminHome() {
           ['محاولات الاختبار', counts.scores],
           ['الطلاب المسجلون', counts.students],
           ['الاختبارات المتاحة', counts.exams],
-        ].map(([label, value]) => (
+        ].filter(([, value]) => value !== null).map(([label, value]) => (
           <div className="mol-card p-5" key={label}>
             <p className="text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{label}</p>
             <p className="mt-2 text-3xl font-extrabold" aria-label={value == null ? 'جار التحميل' : `${value}`}>{value ?? '—'}</p>
@@ -55,7 +58,7 @@ export default function AdminHome() {
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2" aria-label="أقسام الإدارة">
-        {CARDS.map(({ to, title, description, icon: Icon }) => (
+        {CARDS.filter((card) => (!card.permission || can(card.permission)) && (!card.ownerOnly || isOwner)).map(({ to, title, description, icon: Icon }) => (
           <Link key={to} to={to} className="mol-card group flex min-h-36 items-start gap-4 p-5 transition-transform hover:-translate-y-0.5">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl" style={{ background: 'var(--mol-cobalt-soft)', color: 'var(--mol-cobalt)' }}><Icon size={23} /></span>
             <span className="min-w-0 flex-1">

@@ -14,6 +14,7 @@ export default function Admin() {
       '/admin/certificates': 'الشهادات',
       '/admin/students': 'الطلاب',
       '/admin/exams': 'الاختبارات',
+      '/admin/settings': 'الإعدادات',
     };
     document.title = `${pageLabels[location.pathname] || (location.pathname.startsWith('/admin/exams/') ? 'تفاصيل الاختبار' : pageLabels['/admin'])} | منصة لغة الكيمياء`;
   }, [location.pathname]);

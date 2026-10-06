@@ -17,6 +17,7 @@ Deno.serve(async (request) => {
   try {
     const body = await request.json();
     const password = body?.password;
+    const requestedEmail = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (typeof password !== 'string' || password.length < 1 || password.length > 128) {
       return Response.json({ error: 'Invalid password' }, { status: 400, headers });
     }
@@ -29,6 +30,31 @@ Deno.serve(async (request) => {
     if (!secretKey || !publishableKey) throw new Error('Supabase keys are not configured');
 
     const admin = createClient(url, secretKey, { auth: { autoRefreshToken: false, persistSession: false } });
+
+    // Delegated administrators use their own Supabase Auth credentials and scopes.
+    if (requestedEmail) {
+      if (requestedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedEmail)) {
+        return Response.json({ error: 'Invalid account credentials' }, { status: 401, headers });
+      }
+      const auth = createClient(url, publishableKey, { auth: { autoRefreshToken: false, persistSession: false } });
+      const { data: signIn, error: signInError } = await auth.auth.signInWithPassword({ email: requestedEmail, password });
+      if (signInError || !signIn.user || !signIn.session) {
+        return Response.json({ error: 'Invalid account credentials' }, { status: 401, headers });
+      }
+      const { data: role, error: roleError } = await admin.from('teacher_roles')
+        .select('is_owner, permissions').eq('user_id', signIn.user.id).maybeSingle();
+      if (roleError) throw roleError;
+      if (!role || role.is_owner || !Array.isArray(role.permissions) || role.permissions.length === 0) {
+        await auth.auth.signOut();
+        return Response.json({ error: 'Administrator access is not enabled for this account' }, { status: 403, headers });
+      }
+      return Response.json({ session: {
+        access_token: signIn.session.access_token,
+        refresh_token: signIn.session.refresh_token,
+      } }, { headers });
+    }
+
+    // The owner continues to use the shared owner password; it is also rotatable in Settings.
     const forwardedFor = request.headers.get('x-forwarded-for') ?? '';
     const clientIp = forwardedFor.split(',')[0].trim() || request.headers.get('x-real-ip') || 'unknown';
     const ipDigest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(clientIp));
@@ -60,12 +86,17 @@ Deno.serve(async (request) => {
 
     const { data: role, error: roleError } = await admin
       .from('teacher_roles')
-      .select('user_id')
+      .select('user_id, is_owner')
       .eq('user_id', user.id)
       .maybeSingle();
     if (roleError) throw roleError;
+    if (role && !role.is_owner) return Response.json({ error: 'Owner access is not enabled for this account' }, { status: 403, headers });
     if (!role) {
-      const { error: insertRoleError } = await admin.from('teacher_roles').insert({ user_id: user.id });
+      const { error: insertRoleError } = await admin.from('teacher_roles').insert({
+        user_id: user.id,
+        is_owner: true,
+        permissions: ['manage_exams', 'manage_students', 'view_grades'],
+      });
       if (insertRoleError) throw insertRoleError;
     }
 

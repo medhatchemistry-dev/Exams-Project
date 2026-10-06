@@ -34,7 +34,7 @@ Deno.serve(async (request) => {
     if (rateLimitError) throw rateLimitError;
     if (!allowed) return Response.json({ error: 'Too many attempts' }, { status: 429, headers });
 
-    const { data: matches, error: verifyError } = await admin.rpc('verify_teacher_password', { candidate: password });
+    const { data: matches, error: verifyError } = await admin.rpc('verify_exam_reentry_password', { candidate: password });
     if (verifyError) throw verifyError;
     if (!matches) {
       const { error: auditError } = await admin.rpc('record_exam_unlock_failure', { target_attempt_id: attemptId });

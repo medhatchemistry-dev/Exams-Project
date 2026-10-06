@@ -1,17 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Award, BookOpen, LayoutDashboard, LogOut, Menu, Users, X } from 'lucide-react';
+import { Award, BookOpen, LayoutDashboard, LogOut, Menu, Settings, Users, X } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
+import { useAuth } from '@/lib/AuthContext';
 
 const NAV_ITEMS = [
   { to: '/admin', end: true, label: 'الرئيسية', icon: LayoutDashboard },
-  { to: '/admin/scores', label: 'الدرجات', icon: BookOpen },
-  { to: '/admin/certificates', label: 'الشهادات', icon: Award },
-  { to: '/admin/students', label: 'الطلاب', icon: Users },
-  { to: '/admin/exams', label: 'الاختبارات', icon: BookOpen },
+  { to: '/admin/scores', label: 'الدرجات', icon: BookOpen, permission: 'view_grades' },
+  { to: '/admin/certificates', label: 'الشهادات', icon: Award, permission: 'view_grades' },
+  { to: '/admin/students', label: 'الطلاب', icon: Users, permission: 'manage_students' },
+  { to: '/admin/exams', label: 'الاختبارات', icon: BookOpen, permission: 'manage_exams' },
+  { to: '/admin/settings', label: 'الإعدادات', icon: Settings, ownerOnly: true },
 ];
 
 export default function AdminLayout() {
+  const { can, isOwner } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
@@ -26,7 +29,7 @@ export default function AdminLayout() {
 
   const navigation = (
     <nav aria-label="قائمة الإدارة" className="flex flex-col gap-2">
-      {NAV_ITEMS.map(({ to, end, label, icon: Icon }) => (
+      {NAV_ITEMS.filter((item) => (!item.permission || can(item.permission)) && (!item.ownerOnly || isOwner)).map(({ to, end, label, icon: Icon }) => (
         <NavLink
           key={to}
           to={to}

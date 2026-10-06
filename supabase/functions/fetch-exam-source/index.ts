@@ -125,9 +125,9 @@ Deno.serve(async (request) => {
     return Response.json({ error: 'Teacher sign-in is required.' }, { status: 401, headers });
   }
   const { data: teacherRole, error: roleError } = await supabase.from('teacher_roles')
-    .select('user_id').eq('user_id', userData.user.id).maybeSingle();
-  if (roleError || !teacherRole) {
-    return Response.json({ error: 'Teacher access is required.' }, { status: 403, headers });
+    .select('is_owner, permissions').eq('user_id', userData.user.id).maybeSingle();
+  if (roleError || (!teacherRole?.is_owner && !teacherRole?.permissions?.includes('manage_exams'))) {
+    return Response.json({ error: 'Exam management permission is required.' }, { status: 403, headers });
   }
 
   try {

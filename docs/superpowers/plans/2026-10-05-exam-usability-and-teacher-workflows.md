@@ -1,16 +1,17 @@
 # Exam Usability and Teacher Workflows Implementation Plan
 
-> Editable execution plan. The implementation is on `dev-2` (starting at commit `2b34b90`). The remaining unchecked items need a browser-based end-to-end pass; this task was kept to Git/GitHub CLI and Supabase CLI as requested.
+> Editable execution plan. The implementation is on `dev-2` (starting at commit `2b34b90`). This task was kept to Git/GitHub, Supabase, and Vercel CLIs as requested; browser-based visual checks remain open.
 
 ## Current status
 
 - Code checks passed: `npm run lint`, `npm run typecheck`, and `npm run build`.
 - The Node test suite passed all 70 tests, including exam lifecycle, import sanitization, answer-key protection, and security contracts.
-- The linked `exams-master` project has the latest migration applied; `supabase db push` dry-run reports no pending migrations. All five Edge Functions are active.
-- CLI checks confirm the exam revision/attempt tables and teacher role/password-hash records exist. The secure teacher-password reset helper verified a live login session.
+- The linked `exams-master` project has the admin permissions migration applied and all six Edge Functions deployed.
+- CLI checks confirm the exam revision/attempt tables and owner/re-entry password records exist. The owner password was changed and live login verified.
 - A read-only live attempt-state request using a synthetic attempt ID returned the expected `found: false` response.
 - A read-only check of an existing active exam code returned `valid: true`; no student attempt or result was created.
 - The latest `dev-2` GitHub check reported Vercel success. Browser end-to-end flows remain unverified because this run was restricted to CLI access.
+- Supabase business data was reset: exams, codes, attempts, grades, students, event history, legacy question-bank data, and rate-limit counters were removed. The single owner Auth account and separate owner/re-entry password records were preserved.
 
 ## Goal
 
@@ -96,9 +97,19 @@ Improve exam editing, student recovery, question presentation, imports, result e
 - [ ] Verify the complete teacher flow: import HTML/PDF/hosted page → review/edit/translate → publish → edit/re-publish → archive/restore → export class grades.
 - [ ] Verify the student flow: configured/no timer → answer autosave → refresh/device return → pause/resume → lock/re-entry → submit → report PDF → permanent close clears only unfinished drafts.
 - [x] Run `npm run lint`, `npm run typecheck`, `npm run build`, `node --test tests/*.test.js`, and the Supabase CLI migration dry-run.
-- [x] Confirm the latest migration, core tables, and RPC grants/definitions on the linked `exams-master` project. No schema write was needed; role-level RPC integration tests remain pending.
+- [x] Confirm the latest migration, core tables, and RPC grants/definitions on the linked `exams-master` project. Live checks confirmed a grades-only administrator cannot read exam keys or issue exam codes.
 
 **Acceptance:** Audio capability is represented accurately and never promises to defeat mute. All site and PWA icon references use the supplied artwork without changing its silhouette. Existing legacy exam and result paths continue working.
+
+### Phase 7 — Owner settings, delegated admins, and clean Supabase data
+
+- [x] Add owner-only `/admin/settings` controls for the owner password and separate exam re-entry password.
+- [x] Add administrator accounts with per-feature scopes for exam management, student management, and grade viewing; allow the owner to update scopes or remove delegated accounts.
+- [x] Enforce scopes in admin navigation, page routes, Supabase row policies, privileged SQL RPCs, hosted exam import, and student recovery.
+- [x] Set the owner password to the requested value, including its final space, and verify a fresh live login.
+- [x] Verify a temporary grades-only account can sign in but cannot query exam answer keys or issue exam access codes; remove it after the check.
+- [x] Clear exam, code, student, attempt, grade, revision, activity, legacy question-bank, and rate-limit data while retaining the owner and both password hashes.
+- [ ] Complete visual, browser-based admin-to-student end-to-end checks.
 
 ## Likely files and systems
 

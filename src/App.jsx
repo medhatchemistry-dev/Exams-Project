@@ -19,6 +19,8 @@ import StudentsPage from '@/components/admin/StudentsPage';
 import StudentHistoryPage from '@/components/admin/StudentHistoryPage';
 import ExamsPage from '@/components/admin/ExamsPage';
 import ExamDetailPage from '@/components/admin/ExamDetailPage';
+import AdminSettingsPage from '@/components/admin/AdminSettingsPage';
+import AdminPermissionGate from '@/components/admin/AdminPermissionGate';
 
 const AuthenticatedApp = () => {
   // Public chemistry quiz — no auth gate required
@@ -28,12 +30,13 @@ const AuthenticatedApp = () => {
       <Route path="/admin" element={<Admin />}>
         <Route element={<AdminLayout />}>
           <Route index element={<AdminHome />} />
-          <Route path="scores" element={<ScoresPage />} />
-          <Route path="certificates" element={<CertificatesPage />} />
-          <Route path="students" element={<StudentsPage />} />
-          <Route path="students/:studentId" element={<StudentHistoryPage />} />
-          <Route path="exams" element={<ExamsPage />} />
-          <Route path="exams/:examId" element={<ExamDetailPage />} />
+          <Route path="scores" element={<AdminPermissionGate permission="view_grades"><ScoresPage /></AdminPermissionGate>} />
+          <Route path="certificates" element={<AdminPermissionGate permission="view_grades"><CertificatesPage /></AdminPermissionGate>} />
+          <Route path="students" element={<AdminPermissionGate permission="manage_students"><StudentsPage /></AdminPermissionGate>} />
+          <Route path="students/:studentId" element={<AdminPermissionGate permission="view_grades"><StudentHistoryPage /></AdminPermissionGate>} />
+          <Route path="exams" element={<AdminPermissionGate permission="manage_exams"><ExamsPage /></AdminPermissionGate>} />
+          <Route path="exams/:examId" element={<AdminPermissionGate permission="manage_exams"><ExamDetailPage /></AdminPermissionGate>} />
+          <Route path="settings" element={<AdminPermissionGate ownerOnly><AdminSettingsPage /></AdminPermissionGate>} />
         </Route>
       </Route>
       <Route path="/login" element={<Navigate to="/admin" replace />} />

@@ -64,10 +64,11 @@ Vite prints the local URL (normally `http://localhost:5173`). The frontend requi
 | --- | --- |
 | `/` | Student exam access, registration, quiz, and result flow |
 | `/admin` | Teacher login and administration dashboard |
+| `/admin/settings` | Owner-only password and delegated administrator settings |
 | `/register` | Public Supabase Auth registration; registration does not grant teacher access |
 | `/reset-password` | Password reset flow |
 
-The teacher dashboard is available only to authenticated users with a row in `public.teacher_roles`. Teacher sign-in is handled by the `teacher-login` Edge Function.
+The teacher dashboard is available only to authenticated users with an enabled row in `public.teacher_roles`. Exam, student, and grade permissions are checked in both the interface and database policies. The platform owner alone can open `/admin/settings`.
 
 ## Supabase setup
 
@@ -86,7 +87,7 @@ The `dev` and `master` checkouts use separate Supabase projects:
 
 This checkout's `.env.local` and the published `https://chemistry-khalid.vercel.app` bundle currently target `master`. The Supabase CLI login used for this checkout can access `master`; it does not currently have access to the separate `dev` project. Confirm the project reference before changing a database or deploying functions.
 
-As of 2026-10-05, the latest schema migration and all five Edge Functions are deployed to `master`. The main website origin passes the function CORS preflight. The database already has a teacher role and password hash, but a password hash cannot be read back or recovered. If the current teacher password is unknown, reset it with the secure helper below.
+As of 2026-10-06, the latest schema migration and six Edge Functions are deployed to `master`. The owner password and exam re-entry password are stored as separate hashes. The database has one protected owner role; delegated accounts have explicit exam, student, and grade permissions.
 
 Supabase CLI's linked-project setting is local to the checkout; it does not follow Git branch changes. For remote commands, always pass the intended project's ref explicitly. Do not use `--linked` by itself.
 
@@ -106,12 +107,13 @@ When migrations change on GitHub `master`, `.github/workflows/deploy-master-data
 
 ### Deploy Edge Functions
 
-The app calls five functions:
+The app calls six functions:
 
 - `validate-exam-code` checks that a student-provided code is active and has not expired.
 - `teacher-login` verifies the teacher password, applies rate limiting, and creates the teacher Auth session.
+- `manage-teacher-settings` is owner-only and manages delegated admin accounts, permissions, the owner password, and the separate student re-entry password.
 - `jev-import-assist` maps unfamiliar student spreadsheet column labels. It requires a signed-in teacher and sends only header labels and unmapped field names to the server-side Jev request; roster rows never go to Jev.
-- `verify-exam-reentry` checks the existing teacher password and unlocks only the specified locked attempt; it does not create an Auth session.
+- `verify-exam-reentry` checks the student re-entry password and unlocks only the specified locked attempt; it does not create an Auth session.
 - `fetch-exam-source` lets signed-in teachers import bounded public HTTPS HTML and image assets for review. It validates teacher access, DNS results, and redirects, rejects private addresses, and never runs imported JavaScript.
 
 Imported exam files use deterministic HTML/PDF parsing and teacher review. Jev's `jev-latest` API accepts bounded structured decision questions, not exam files or a reliable question-bank parser, so this workflow does not send exam content to Jev or use it to create questions, answer keys, or publication state. Roster header mapping remains the only Jev-assisted workflow.
@@ -130,7 +132,7 @@ All functions use server-side Supabase secrets. Never expose a service-role/secr
 
 #### Reset the teacher password
 
-The password is a database value, not a Supabase project password or a website build variable. To choose a new password for `exams-master`, run this from the linked checkout. The helper verifies the linked project, prompts without echoing the password, updates only its hash, and verifies the login endpoint:
+The owner password is a database value, not a Supabase project password or a website build variable. The owner can change it from **Admin → Settings**. The exam re-entry password is separate and can also be changed there. For recovery, the helper below changes only the owner password hash and requires a strong value:
 
 ```powershell
 pwsh ./scripts/reset-master-teacher-password.ps1
@@ -142,7 +144,7 @@ To have the helper generate a strong random password instead, run `pwsh ./script
 
 The teacher password is verified against the hash in the connected Supabase database. The login screen distinguishes a rejected password (`401`), a temporary rate limit (`429`), and a connection/service error. If a known password is rejected, use the reset helper above. If login still fails for another reason, check the Edge Function logs for a rejected `OPTIONS` preflight; a `403` means the browser origin is not allowed and the password has not been checked.
 
-The functions allow local development and the legacy `exams-project*.vercel.app` origins. The current main production site is `https://chemistry-khalid.vercel.app`; its exact origin is configured in the Exams Supabase project. For any custom production hostname, configure the exact HTTPS origin in the Supabase Edge Function secret `APP_ALLOWED_ORIGINS` (comma-separated when multiple origins are needed):
+The functions allow local development and the legacy `exams-project*.vercel.app` origins. The current main production site is `https://chemistry-khalid.vercel.app`; its exact origin is configured in the Exams Supabase project. The `manage-teacher-settings` function also needs that exact configured origin. For any custom production hostname, configure the exact HTTPS origin in the Supabase Edge Function secret `APP_ALLOWED_ORIGINS` (comma-separated when multiple origins are needed):
 
 ```bash
 supabase secrets set APP_ALLOWED_ORIGINS="https://chemistry-khalid.vercel.app" --project-ref sbgohdehpkjfsktgdzjj
@@ -156,7 +158,7 @@ Teachers can preview an imported exam before publishing its access code, then pa
 
 For imported exam attempts, the third recorded visibility, window-blur, or fullscreen-exit warning locks the attempt without auto-submitting it. Re-entry checks the teacher password on the server, binds the unlock to that attempt, and rate-limits retries. Student activity events use server timestamps, but browser signals can be incomplete or forged and are not standalone proof of misconduct.
 
-The student start action requests fullscreen and resumes the page's warning audio where supported. Browsers may deny either request, and students can exit fullscreen. The app cannot control operating-system volume or detect every browser or operating-system shortcut. It reports browser capability and offers a retry where supported.
+Before fullscreen, students must play and confirm the exam sound check. Browsers can still deny fullscreen, and students can exit it. A website cannot unmute an operating system or device, control its physical volume, or detect every browser or operating-system shortcut.
 
 ## Project structure
 

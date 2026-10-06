@@ -4,8 +4,10 @@ import { supabase } from '@/api/supabaseClient';
 import Certificate from '@/components/quiz/Certificate';
 import { CERTIFICATE_TEMPLATES } from '@/lib/certificateTemplates';
 import { saveExamCertificateTemplate } from '@/lib/examRepository';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function CertificatesPanel() {
+  const { can } = useAuth();
   const [results, setResults] = useState([]);
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +27,7 @@ export default function CertificatesPanel() {
     try {
       const [resultsResponse, examsResponse] = await Promise.all([
         supabase.from('exam_results').select('*').eq('is_perfect', true).order('created_at', { ascending: false }).limit(200),
-        supabase.from('exams').select('id, title, certificate_template_id').order('created_at', { ascending: false }),
+        supabase.from('teacher_exam_summaries').select('id, title, certificate_template_id, created_at').order('created_at', { ascending: false }),
       ]);
       if (resultsResponse.error) throw resultsResponse.error;
       if (examsResponse.error) throw examsResponse.error;
@@ -87,7 +89,7 @@ export default function CertificatesPanel() {
       ) : (
         <section className="space-y-4">
           <div className="mol-card grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-            <label className="mol-label">اختر الاختبار لتخصيص شهاداته<select className="mol-input mt-1" value={examId} onChange={(event) => { setExamId(event.target.value); setTemplateNotice(''); }}><option value="">اختر اختباراً</option>{exams.map((exam) => <option key={exam.id} value={exam.id}>{exam.title}</option>)}</select></label>
+            <label className="mol-label">{can('manage_exams') ? 'اختر الاختبار لتخصيص شهاداته' : 'اختر الاختبار لمعاينة قالبه'}<select className="mol-input mt-1" value={examId} onChange={(event) => { setExamId(event.target.value); setTemplateNotice(''); }}><option value="">اختر اختباراً</option>{exams.map((exam) => <option key={exam.id} value={exam.id}>{exam.title}</option>)}</select></label>
             <p className="text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>{selectedExam ? `القالب الحالي: ${CERTIFICATE_TEMPLATES[(selectedExam.certificate_template_id || 1) - 1]?.name || CERTIFICATE_TEMPLATES[0].name}` : 'استورد اختباراً أولاً لتعيين قالب خاص به.'}</p>
           </div>
           {templateNotice && <p role="status" className="mol-card p-3 text-sm font-bold" style={{ color: templateNotice.startsWith('تعذر') ? 'var(--mol-red)' : 'var(--mol-green)' }}>{templateNotice}</p>}
@@ -100,7 +102,7 @@ export default function CertificatesPanel() {
                     <span aria-hidden="true" className="absolute left-3 top-1 text-2xl opacity-60">{template.symbol}</span><span aria-hidden="true" className="absolute bottom-1 right-3 text-2xl opacity-60">{template.symbol}</span>
                     <div><p className="text-[10px] font-extrabold tracking-[0.2em]">CERTIFICATE</p><p className="mt-1 text-lg font-black">شهادة تقدير</p><p className="mt-2 text-sm font-bold" style={{ color: '#25334a' }}>اسم الطالب يظهر هنا</p><p className="mt-1 text-[11px] font-bold" dir="ltr" style={{ color: '#526174' }}>Student name preview</p><p className="mt-2 text-xs font-bold">{template.name}</p></div>
                   </div>
-                  <div className="flex items-center justify-between gap-2 pt-3"><div><p className="font-extrabold">{template.id}. {template.name}</p>{isCurrent && <span className="mt-1 inline-flex items-center gap-1 text-xs font-extrabold" style={{ color: 'var(--mol-green)' }}><Check size={13} /> محدد لهذا الاختبار</span>}</div><button type="button" className={`mol-btn inline-flex items-center gap-1.5 px-3 py-2 text-sm ${isCurrent ? 'mol-btn-primary' : 'mol-btn-ghost'}`} disabled={!selectedExam || savingTemplate || isCurrent} onClick={() => chooseTemplate(template.id)}>{savingTemplate ? <Loader2 size={15} className="animate-spin" /> : isCurrent ? <Check size={15} /> : null}{isCurrent ? 'المحدد' : 'اختيار'}</button></div>
+                  <div className="flex items-center justify-between gap-2 pt-3"><div><p className="font-extrabold">{template.id}. {template.name}</p>{isCurrent && <span className="mt-1 inline-flex items-center gap-1 text-xs font-extrabold" style={{ color: 'var(--mol-green)' }}><Check size={13} /> محدد لهذا الاختبار</span>}</div>{can('manage_exams') && <button type="button" className={`mol-btn inline-flex items-center gap-1.5 px-3 py-2 text-sm ${isCurrent ? 'mol-btn-primary' : 'mol-btn-ghost'}`} disabled={!selectedExam || savingTemplate || isCurrent} onClick={() => chooseTemplate(template.id)}>{savingTemplate ? <Loader2 size={15} className="animate-spin" /> : isCurrent ? <Check size={15} /> : null}{isCurrent ? 'المحدد' : 'اختيار'}</button>}</div>
                 </article>
               );
             })}

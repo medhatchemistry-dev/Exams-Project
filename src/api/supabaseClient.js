@@ -14,10 +14,29 @@ export async function hasTeacherRole(userId) {
 
   const { data, error } = await supabase
     .from('teacher_roles')
-    .select('user_id')
+    .select('user_id, is_owner, permissions')
     .eq('user_id', userId)
     .maybeSingle();
 
   if (error) throw error;
-  return Boolean(data);
+  return Boolean(data && (data.is_owner || data.permissions?.length));
+}
+
+export async function hasTeacherPermission(userId, permission) {
+  if (!userId || !permission) return false;
+  const { data, error } = await supabase.from('teacher_roles')
+    .select('is_owner, permissions').eq('user_id', userId).maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.is_owner || data?.permissions?.includes(permission));
+}
+
+export async function getTeacherAccess(userId) {
+  if (!userId) return { isOwner: false, permissions: [] };
+  const { data, error } = await supabase.from('teacher_roles')
+    .select('is_owner, permissions').eq('user_id', userId).maybeSingle();
+  if (error) throw error;
+  return {
+    isOwner: Boolean(data?.is_owner),
+    permissions: Array.isArray(data?.permissions) ? data.permissions : [],
+  };
 }

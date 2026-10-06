@@ -24,9 +24,12 @@ Deno.serve(async (request) => {
     const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const { data: authData, error: authError } = await admin.auth.getUser(accessToken);
     if (authError || !authData.user) return Response.json({ error: 'Teacher sign-in required' }, { status: 401, headers });
-    const { data: teacher, error: roleError } = await admin.from('teacher_roles').select('user_id').eq('user_id', authData.user.id).maybeSingle();
+    const { data: teacher, error: roleError } = await admin.from('teacher_roles')
+      .select('is_owner, permissions').eq('user_id', authData.user.id).maybeSingle();
     if (roleError) throw roleError;
-    if (!teacher) return Response.json({ error: 'Teacher access required' }, { status: 403, headers });
+    if (!teacher?.is_owner && !teacher?.permissions?.includes('manage_students')) {
+      return Response.json({ error: 'Student management permission required' }, { status: 403, headers });
+    }
 
     const body = await request.json();
     if (body?.action !== 'map-student-headers' || !Array.isArray(body.headers) || !Array.isArray(body.unmappedFields)) {

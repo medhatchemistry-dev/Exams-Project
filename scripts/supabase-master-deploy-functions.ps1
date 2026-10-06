@@ -8,4 +8,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & supabase functions deploy jev-import-assist --project-ref $projectRef
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& supabase functions deploy manage-teacher-settings --project-ref $projectRef
 exit $LASTEXITCODE

@@ -1,5 +1,5 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import { hasTeacherRole, supabase } from '@/api/supabaseClient';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import { getTeacherAccess, supabase } from '@/api/supabaseClient';
 
 const AuthContext = createContext(null);
 
@@ -9,6 +9,9 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
   const [isTeacher, setIsTeacher] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [permissions, setPermissions] = useState([]);
+  const can = useCallback((permission) => isOwner || permissions.includes(permission), [isOwner, permissions]);
 
   useEffect(() => {
     let active = true;
@@ -21,10 +24,16 @@ export const AuthProvider = ({ children }) => {
       setUser(currentUser);
       setIsAuthenticated(Boolean(currentUser));
       setIsTeacher(false);
+      setIsOwner(false);
+      setPermissions([]);
 
       try {
-        const teacherRole = currentUser ? await hasTeacherRole(currentUser.id) : false;
-        if (active && version === sessionVersion) setIsTeacher(teacherRole);
+        const access = currentUser ? await getTeacherAccess(currentUser.id) : { isOwner: false, permissions: [] };
+        if (active && version === sessionVersion) {
+          setIsOwner(access.isOwner);
+          setPermissions(access.permissions);
+          setIsTeacher(access.isOwner || access.permissions.length > 0);
+        }
       } catch (error) {
         console.error('Teacher role check failed:', error);
       } finally {
@@ -64,6 +73,9 @@ export const AuthProvider = ({ children }) => {
       isLoadingAuth,
       authChecked,
       isTeacher,
+      isOwner,
+      permissions,
+      can,
       logout,
     }}>
       {children}
