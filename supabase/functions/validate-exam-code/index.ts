@@ -305,6 +305,9 @@ Deno.serve(async (request) => {
       return Response.json({ ...resolution, banks: publicBanks }, { headers });
     }
     if (resolution?.valid && resolution.legacy === false && resolution.banks && typeof resolution.banks === 'object') {
+      const { data: targetClass, error: classError } = await admin.from('exams')
+        .select('target_grade, target_track, target_section').eq('id', resolution.examId).single();
+      if (classError) throw classError;
       const publicBanks = Object.fromEntries(Object.entries(resolution.banks).map(([key, questions]) => [
         key,
         Array.isArray(questions) ? questions.map((question) => {
@@ -312,7 +315,13 @@ Deno.serve(async (request) => {
           return studentQuestion;
         }) : [],
       ]));
-      return Response.json({ ...resolution, banks: publicBanks }, { headers });
+      return Response.json({
+        ...resolution,
+        targetClass: targetClass.target_grade && targetClass.target_track && targetClass.target_section
+          ? { grade: targetClass.target_grade, track: targetClass.target_track, section: targetClass.target_section }
+          : null,
+        banks: publicBanks,
+      }, { headers });
     }
     return Response.json(resolution ?? { valid: false }, { headers });
   } catch (error) {

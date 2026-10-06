@@ -757,7 +757,7 @@ export default function QuizApp() {
     <LoginScreen
       onStart={handleStart}
       durationMinutes={validatedExam?.durationMinutes}
-      targetClass={null}
+      targetClass={validatedExam?.targetClass || null}
       accessCode={accessCode}
     />
       )}
