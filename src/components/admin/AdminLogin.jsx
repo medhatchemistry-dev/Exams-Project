@@ -4,7 +4,6 @@ import { ShieldCheck, ArrowRight, Loader2, LockKeyhole } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 
 export default function AdminLogin() {
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,7 +14,7 @@ export default function AdminLogin() {
     setLoading(true);
     try {
       const { data, error: loginError } = await supabase.functions.invoke('teacher-login', {
-        body: { password, ...(email.trim() ? { email: email.trim() } : {}) },
+        body: { password },
       });
       if (loginError) throw loginError;
       if (!data?.session?.access_token || !data?.session?.refresh_token) {
@@ -46,14 +45,9 @@ export default function AdminLogin() {
         </div>
         <h2 className="text-xl font-extrabold mb-1">تسجيل دخول المعلم</h2>
         <p className="text-sm font-bold mb-6" style={{ color: 'var(--mol-muted)' }}>
-          سجّل الدخول بحساب المعلم المصرّح به
+          أدخل كلمة المرور المخصصة لحسابك
         </p>
         <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-2 text-left">
-            <label htmlFor="teacher-email" className="text-sm font-medium">البريد الإلكتروني <span style={{ color: 'var(--mol-muted)' }}>(للحسابات المفوضة)</span></label>
-            <input id="teacher-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} className="mol-input" />
-            <p className="text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>اتركه فارغاً إذا كنت تدخل بحساب المالك.</p>
-          </div>
           <div className="space-y-2 text-left">
             <label htmlFor="teacher-password" className="text-sm font-medium">كلمة المرور</label>
             <div className="relative">

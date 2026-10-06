@@ -106,8 +106,9 @@ Improve exam editing, student recovery, question presentation, imports, result e
 - [x] Add owner-only `/admin/settings` controls for the owner password and separate exam re-entry password.
 - [x] Add administrator accounts with per-feature scopes for exam management, student management, and grade viewing; allow the owner to update scopes or remove delegated accounts.
 - [x] Enforce scopes in admin navigation, page routes, Supabase row policies, privileged SQL RPCs, hosted exam import, and student recovery.
-- [x] Set the owner password to the requested value, including its final space, and verify a fresh live login.
-- [x] Verify a temporary grades-only account can sign in but cannot query exam answer keys or issue exam access codes; remove it after the check.
+- [x] Use the exact owner password `50605060@` with no trailing space and verify password-only owner login.
+- [x] Create and reset delegated admins using a display name, unique password, and scopes; sign-in requires only the password and never asks for an email.
+- [x] Verify a temporary grades-only account can sign in without an email, has only its grade scope, and cannot access owner settings; remove it after the check.
 - [x] Clear exam, code, student, attempt, grade, revision, activity, legacy question-bank, and rate-limit data while retaining the owner and both password hashes.
 - [x] Remove anonymous direct access to student names/numbers; the student picker now receives only the class assigned to a currently active exam code, and unassigned/legacy exams use manual entry.
 - [ ] Complete visual, browser-based admin-to-student end-to-end checks.

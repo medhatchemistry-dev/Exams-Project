@@ -17,7 +17,6 @@ Deno.serve(async (request) => {
   try {
     const body = await request.json();
     const password = body?.password;
-    const requestedEmail = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     if (typeof password !== 'string' || password.length < 1 || password.length > 128) {
       return Response.json({ error: 'Invalid password' }, { status: 400, headers });
     }
@@ -30,44 +29,41 @@ Deno.serve(async (request) => {
     if (!secretKey || !publishableKey) throw new Error('Supabase keys are not configured');
 
     const admin = createClient(url, secretKey, { auth: { autoRefreshToken: false, persistSession: false } });
-
-    // Delegated administrators use their own Supabase Auth credentials and scopes.
-    if (requestedEmail) {
-      if (requestedEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedEmail)) {
-        return Response.json({ error: 'Invalid account credentials' }, { status: 401, headers });
-      }
-      const auth = createClient(url, publishableKey, { auth: { autoRefreshToken: false, persistSession: false } });
-      const { data: signIn, error: signInError } = await auth.auth.signInWithPassword({ email: requestedEmail, password });
-      if (signInError || !signIn.user || !signIn.session) {
-        return Response.json({ error: 'Invalid account credentials' }, { status: 401, headers });
-      }
-      const { data: role, error: roleError } = await admin.from('teacher_roles')
-        .select('is_owner, permissions').eq('user_id', signIn.user.id).maybeSingle();
-      if (roleError) throw roleError;
-      if (!role || role.is_owner || !Array.isArray(role.permissions) || role.permissions.length === 0) {
-        await auth.auth.signOut();
-        return Response.json({ error: 'Administrator access is not enabled for this account' }, { status: 403, headers });
-      }
-      return Response.json({ session: {
-        access_token: signIn.session.access_token,
-        refresh_token: signIn.session.refresh_token,
-      } }, { headers });
-    }
-
-    // The owner continues to use the shared owner password; it is also rotatable in Settings.
     const forwardedFor = request.headers.get('x-forwarded-for') ?? '';
     const clientIp = forwardedFor.split(',')[0].trim() || request.headers.get('x-real-ip') || 'unknown';
     const ipDigest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(clientIp));
     const ipHash = Array.from(new Uint8Array(ipDigest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+    // Password-only delegated sign-in: hashes map each unique password to one scoped Auth identity.
     const { data: passwordMatches, error: passwordCheckError } = await admin.rpc('verify_teacher_password', { candidate: password });
     if (passwordCheckError) throw passwordCheckError;
     if (!passwordMatches) {
+      const { data: delegateId, error: delegateError } = await admin.rpc('find_teacher_delegate_by_password', { candidate: password });
+      if (delegateError) throw delegateError;
+      if (delegateId) {
+        const [{ data: userData, error: userError }, { data: role, error: roleError }] = await Promise.all([
+          admin.auth.admin.getUserById(delegateId),
+          admin.from('teacher_roles').select('is_owner, permissions').eq('user_id', delegateId).maybeSingle(),
+        ]);
+        if (userError) throw userError;
+        if (roleError) throw roleError;
+        if (userData.user?.email && role && !role.is_owner && Array.isArray(role.permissions) && role.permissions.length > 0) {
+          const auth = createClient(url, publishableKey, { auth: { autoRefreshToken: false, persistSession: false } });
+          const { data: signIn, error: signInError } = await auth.auth.signInWithPassword({ email: userData.user.email, password });
+          if (signInError || !signIn.session) throw new Error('Delegated administrator authentication failed');
+          return Response.json({ session: {
+            access_token: signIn.session.access_token,
+            refresh_token: signIn.session.refresh_token,
+          } }, { headers });
+        }
+      }
       const { data: allowed, error: rateLimitError } = await admin.rpc('consume_access_attempt', { client_hash: ipHash, attempt_purpose: 'teacher_login' });
       if (rateLimitError) throw rateLimitError;
       if (!allowed) return Response.json({ error: 'Too many attempts' }, { status: 429, headers });
       return Response.json({ error: 'Invalid password' }, { status: 401, headers });
     }
 
+    // The owner also signs in with only the owner password.
     const auth = createClient(url, publishableKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
     const email = Deno.env.get('TEACHER_LOGIN_EMAIL') ?? 'medhat.chemistry@gmail.com';

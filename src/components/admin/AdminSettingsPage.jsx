@@ -9,7 +9,7 @@ const PERMISSIONS = [
 ];
 
 const EMPTY_PASSWORD = { password: '', confirm: '' };
-const EMPTY_NEW_USER = { email: '', password: '', permissions: ['manage_students'] };
+const EMPTY_NEW_USER = { displayName: '', password: '', permissions: ['manage_students'] };
 
 async function invokeSettings(action, values = {}) {
   const { data, error } = await supabase.functions.invoke('manage-teacher-settings', { body: { action, ...values } });
@@ -88,6 +88,7 @@ export default function AdminSettingsPage() {
   const [createError, setCreateError] = useState('');
   const [savingUserId, setSavingUserId] = useState('');
   const [userMessage, setUserMessage] = useState('');
+  const [resetPasswords, setResetPasswords] = useState({});
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true);
@@ -126,7 +127,7 @@ export default function AdminSettingsPage() {
     setUserMessage('');
     try {
       await invokeSettings('update-user-permissions', { userId: user.id, permissions: user.permissions });
-      setUserMessage(`تم تحديث صلاحيات ${user.email}.`);
+      setUserMessage(`تم تحديث صلاحيات ${user.displayName}.`);
     } catch (error) {
       setUsersError(error.message);
       await loadUsers();
@@ -135,14 +136,34 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const setDelegatePassword = async (user) => {
+    const password = resetPasswords[user.id] || '';
+    if (password.length < 12 || password.length > 128) {
+      setUsersError('استخدم كلمة مرور فريدة من 12 حرفاً على الأقل.');
+      return;
+    }
+    setSavingUserId(user.id);
+    setUsersError('');
+    setUserMessage('');
+    try {
+      await invokeSettings('set-delegate-password', { userId: user.id, password });
+      setResetPasswords((current) => ({ ...current, [user.id]: '' }));
+      setUserMessage(`تم تحديث كلمة مرور ${user.displayName}.`);
+    } catch (error) {
+      setUsersError(error.message);
+    } finally {
+      setSavingUserId('');
+    }
+  };
+
   const removeUser = async (user) => {
-    if (!window.confirm(`حذف حساب ${user.email} وإلغاء صلاحياته نهائياً؟`)) return;
+    if (!window.confirm(`حذف حساب ${user.displayName} وإلغاء صلاحياته نهائياً؟`)) return;
     setSavingUserId(user.id);
     setUsersError('');
     setUserMessage('');
     try {
       await invokeSettings('remove-user', { userId: user.id });
-      setUserMessage(`تم حذف حساب ${user.email}.`);
+      setUserMessage(`تم حذف حساب ${user.displayName}.`);
       await loadUsers();
     } catch (error) {
       setUsersError(error.message);
@@ -166,15 +187,16 @@ export default function AdminSettingsPage() {
       </section>
 
       <section className="mol-card space-y-5 p-5 md:p-6">
-        <div className="flex items-center gap-3"><Users size={20} style={{ color: 'var(--mol-cobalt)' }} /><div><h2 className="text-lg font-extrabold">حسابات المديرين والصلاحيات</h2><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>يمكن للحسابات المضافة تسجيل الدخول ببريدها وكلمة مرورها الخاصة.</p></div></div>
+        <div className="flex items-center gap-3"><Users size={20} style={{ color: 'var(--mol-cobalt)' }} /><div><h2 className="text-lg font-extrabold">حسابات المديرين والصلاحيات</h2><p className="mt-1 text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>يدخل كل مدير بكلمة مروره فقط، من دون بريد إلكتروني.</p></div></div>
         {usersError && <p role="alert" className="rounded-lg p-3 text-sm font-bold" style={{ background: 'var(--mol-red-soft)', color: 'var(--mol-red)' }}>{usersError}</p>}
         {userMessage && <p role="status" className="text-sm font-extrabold" style={{ color: 'var(--mol-green)' }}>{userMessage}</p>}
         {loadingUsers ? <p role="status" className="flex items-center gap-2 font-bold"><Loader2 size={16} className="animate-spin" /> جارٍ تحميل الحسابات…</p> : users.length === 0 ? <p className="text-sm font-bold" style={{ color: 'var(--mol-muted)' }}>لا توجد حسابات مديرين.</p> : (
           <div className="space-y-3">
             {users.map((user) => (
               <article key={user.id} className="space-y-3 rounded-xl border p-4" style={{ borderColor: 'var(--mol-line-strong)' }}>
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-extrabold">{user.email || 'حساب بلا بريد'}</p><p className="text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>{user.isOwner ? 'مالك المنصة · جميع الصلاحيات' : 'مدير مفوض'}</p></div>{!user.isOwner && <div className="flex gap-2"><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-1.5 px-3 py-2" disabled={savingUserId === user.id} onClick={() => savePermissions(user)}>{savingUserId === user.id ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} حفظ الصلاحيات</button><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-1.5 px-3 py-2" disabled={savingUserId === user.id} onClick={() => removeUser(user)}><Trash2 size={15} style={{ color: 'var(--mol-red)' }} /> حذف</button></div>}</div>
+                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-extrabold">{user.displayName}</p><p className="text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>{user.isOwner ? 'مالك المنصة · جميع الصلاحيات' : 'مدير مفوض · تسجيل بكلمة مرور فقط'}</p></div>{!user.isOwner && <div className="flex gap-2"><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-1.5 px-3 py-2" disabled={savingUserId === user.id} onClick={() => savePermissions(user)}>{savingUserId === user.id ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} حفظ الصلاحيات</button><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-1.5 px-3 py-2" disabled={savingUserId === user.id} onClick={() => removeUser(user)}><Trash2 size={15} style={{ color: 'var(--mol-red)' }} /> حذف</button></div>}</div>
                 <PermissionChoices selected={user.permissions || []} disabled={user.isOwner} onChange={(permissions) => setUsers((current) => current.map((item) => item.id === user.id ? { ...item, permissions } : item))} />
+                {!user.isOwner && <div className="flex flex-wrap gap-2"><input className="mol-input min-w-52 flex-1" type="password" autoComplete="new-password" minLength={12} maxLength={128} aria-label={`كلمة المرور الجديدة للمدير ${user.displayName}`} placeholder="كلمة مرور جديدة (12 حرفاً على الأقل)" value={resetPasswords[user.id] || ''} onChange={(event) => setResetPasswords((current) => ({ ...current, [user.id]: event.target.value }))} /><button type="button" className="mol-btn mol-btn-ghost inline-flex items-center gap-1.5 px-3 py-2" disabled={savingUserId === user.id || (resetPasswords[user.id] || '').length < 12} onClick={() => setDelegatePassword(user)}>{savingUserId === user.id ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />} تعيين كلمة المرور</button></div>}
               </article>
             ))}
           </div>
@@ -183,7 +205,7 @@ export default function AdminSettingsPage() {
         <form className="space-y-4" onSubmit={createUser}>
           <h3 className="font-extrabold">إضافة مدير</h3>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="mol-label">البريد الإلكتروني<input className="mol-input mt-1" type="email" autoComplete="off" maxLength={254} value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} required /></label>
+            <label className="mol-label">اسم المدير<input className="mol-input mt-1" type="text" autoComplete="off" maxLength={80} value={newUser.displayName} onChange={(event) => setNewUser((current) => ({ ...current, displayName: event.target.value }))} required /></label>
             <label className="mol-label">كلمة المرور الأولية<input className="mol-input mt-1" type="password" autoComplete="new-password" minLength={12} maxLength={128} value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} required /><span className="mt-1 block text-xs font-bold" style={{ color: 'var(--mol-muted)' }}>12 حرفاً على الأقل.</span></label>
           </div>
           <PermissionChoices selected={newUser.permissions} onChange={(permissions) => setNewUser((current) => ({ ...current, permissions }))} />
