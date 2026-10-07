@@ -148,6 +148,64 @@ Deno.serve(async (request) => {
       if (!allowed) return Response.json({ error: 'Too many attempts' }, { status: 429, headers });
       if (body?.action === 'submit') return Response.json({ error: 'Exam access code is inactive or expired' }, { status: 409, headers });
     }
+    if (body?.action === 'bank') {
+      const grade = typeof body.grade === 'string' ? body.grade.trim() : '';
+      const track = typeof body.track === 'string' ? body.track.trim() : '';
+      if (!grade || !track) {
+        return Response.json({ error: 'Grade and track are required' }, { status: 400, headers });
+      }
+
+      const bankKey = `${grade}-${track}`;
+
+      if (resolution?.legacy) {
+        const { data: bankRecord, error: bankError } = await admin
+          .from('legacy_exam_question_banks')
+          .select('banks')
+          .eq('id', true)
+          .single();
+        if (bankError) throw bankError;
+
+        const publicBanks = toPublicQuestionBanks(bankRecord.banks);
+        const questions = publicBanks?.[bankKey];
+        if (!Array.isArray(questions) || questions.length === 0) {
+          return Response.json({
+            valid: true,
+            legacy: true,
+            bankKey,
+            questions: [],
+          }, { headers });
+        }
+
+        return Response.json({
+          valid: true,
+          legacy: true,
+          bankKey,
+          questions,
+        }, { headers });
+      }
+
+      if (!resolution?.valid || !resolution.banks || typeof resolution.banks !== 'object') {
+        return Response.json({ error: 'Exam question bank is unavailable' }, { status: 409, headers });
+      }
+
+      const rawQuestions = resolution.banks[bankKey];
+      const questions = Array.isArray(rawQuestions)
+        ? rawQuestions.map((question) => {
+          const { answer: _answer, ...studentQuestion } = question;
+          return studentQuestion;
+        })
+        : [];
+
+      return Response.json({
+        valid: true,
+        legacy: false,
+        examId: resolution.examId,
+        examTitle: resolution.examTitle,
+        bankKey,
+        questions,
+      }, { headers });
+    }
+
     if (body?.action === 'roster') {
       if (!resolution?.valid || resolution.legacy || !resolution.examId) {
         return Response.json({ students: [] }, { headers });
@@ -295,32 +353,19 @@ Deno.serve(async (request) => {
       }, { headers });
     }
     if (resolution?.valid && resolution.legacy === true) {
-      const { data: bankRecord, error: bankError } = await admin
-        .from('legacy_exam_question_banks')
-        .select('banks')
-        .eq('id', true)
-        .single();
-      if (bankError) throw bankError;
-      const publicBanks = toPublicQuestionBanks(bankRecord.banks);
-      return Response.json({ ...resolution, banks: publicBanks }, { headers });
+      return Response.json(resolution, { headers });
     }
-    if (resolution?.valid && resolution.legacy === false && resolution.banks && typeof resolution.banks === 'object') {
+    if (resolution?.valid && resolution.legacy === false) {
       const { data: targetClass, error: classError } = await admin.from('exams')
         .select('target_grade, target_track, target_section').eq('id', resolution.examId).single();
       if (classError) throw classError;
-      const publicBanks = Object.fromEntries(Object.entries(resolution.banks).map(([key, questions]) => [
-        key,
-        Array.isArray(questions) ? questions.map((question) => {
-          const { answer: _answer, ...studentQuestion } = question;
-          return studentQuestion;
-        }) : [],
-      ]));
+
+      const { banks: _banks, ...publicResolution } = resolution;
       return Response.json({
-        ...resolution,
+        ...publicResolution,
         targetClass: targetClass.target_grade && targetClass.target_track && targetClass.target_section
           ? { grade: targetClass.target_grade, track: targetClass.target_track, section: targetClass.target_section }
           : null,
-        banks: publicBanks,
       }, { headers });
     }
     return Response.json(resolution ?? { valid: false }, { headers });
