@@ -352,20 +352,47 @@ Deno.serve(async (request) => {
         questions: result?.questions_json,
       }, { headers });
     }
-    if (resolution?.valid && resolution.legacy === true) {
-      return Response.json(resolution, { headers });
-    }
-    if (resolution?.valid && resolution.legacy === false) {
+    if (body?.action === 'validate') {
+      if (resolution?.legacy) return Response.json(resolution, { headers });
       const { data: targetClass, error: classError } = await admin.from('exams')
         .select('target_grade, target_track, target_section').eq('id', resolution.examId).single();
       if (classError) throw classError;
-
       const { banks: _banks, ...publicResolution } = resolution;
       return Response.json({
         ...publicResolution,
         targetClass: targetClass.target_grade && targetClass.target_track && targetClass.target_section
           ? { grade: targetClass.target_grade, track: targetClass.target_track, section: targetClass.target_section }
           : null,
+      }, { headers });
+    }
+
+    if (resolution?.valid && resolution.legacy === true) {
+      const { data: bankRecord, error: bankError } = await admin
+        .from('legacy_exam_question_banks')
+        .select('banks')
+        .eq('id', true)
+        .single();
+      if (bankError) throw bankError;
+      const publicBanks = toPublicQuestionBanks(bankRecord.banks);
+      return Response.json({ ...resolution, banks: publicBanks }, { headers });
+    }
+    if (resolution?.valid && resolution.legacy === false) {
+      const { data: targetClass, error: classError } = await admin.from('exams')
+        .select('target_grade, target_track, target_section').eq('id', resolution.examId).single();
+      if (classError) throw classError;
+      const publicBanks = Object.fromEntries(Object.entries(resolution.banks || {}).map(([key, questions]) => [
+        key,
+        Array.isArray(questions) ? questions.map((question) => {
+          const { answer: _answer, ...studentQuestion } = question;
+          return studentQuestion;
+        }) : [],
+      ]));
+      return Response.json({
+        ...resolution,
+        targetClass: targetClass.target_grade && targetClass.target_track && targetClass.target_section
+          ? { grade: targetClass.target_grade, track: targetClass.target_track, section: targetClass.target_section }
+          : null,
+        banks: publicBanks,
       }, { headers });
     }
     return Response.json(resolution ?? { valid: false }, { headers });
