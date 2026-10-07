@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { supabase, hasTeacherPermission } from '@/api/supabaseClient';
-import { buildExam, selectExamBank } from '@/lib/examExecution';
+import { buildExam } from '@/lib/examExecution';
 import LoginScreen from '@/components/quiz/LoginScreen';
 import QuizScreen from '@/components/quiz/QuizScreen';
 import ResultScreen from '@/components/quiz/ResultScreen';
