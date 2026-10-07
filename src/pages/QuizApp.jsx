@@ -127,7 +127,7 @@ export default function QuizApp() {
   }, []);
 
   const validateExamCode = useCallback(async (code) => {
-    const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { code } });
+    const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { action: 'validate', code } });
     if (error) throw error;
     if (data?.valid) {
       setBanks(null);
