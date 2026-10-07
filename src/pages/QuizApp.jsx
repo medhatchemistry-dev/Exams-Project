@@ -130,17 +130,8 @@ export default function QuizApp() {
     const { data, error } = await supabase.functions.invoke('validate-exam-code', { body: { code } });
     if (error) throw error;
     if (data?.valid) {
-      if (data.legacy) {
-        if (!data.banks || typeof data.banks !== 'object') {
-          setBanksError(true);
-          throw new Error('تعذر تحميل بنك الأسئلة الحالي.');
-        }
-        setBanks(data.banks);
-        setBanksError(false);
-      } else {
-        setBanks(null);
-        setBanksError(false);
-      }
+      setBanks(null);
+      setBanksError(false);
       setAccessCode(code);
       setValidatedExam(data);
       setScreen('login');
@@ -358,7 +349,6 @@ export default function QuizApp() {
 
   const beginExam = useCallback(
     async (info, recoverDevice = false) => {
-      if (validatedExam?.legacy && !banks) return;
       if (!await isExamCodeActive()) {
         setScreen('access');
         showAlert('انتهت صلاحية الرمز', 'أوقف المعلم الاختبار أو انتهت صلاحية الرمز. اطلب رمزاً صالحاً للمتابعة.');
@@ -366,18 +356,27 @@ export default function QuizApp() {
       }
       let exam = [];
       try {
-        const selectedBank = selectExamBank(validatedExam, info.grade, info.track, banks || {});
+        const { data: bankData, error: bankError } = await supabase.functions.invoke('validate-exam-code', {
+          body: { action: 'bank', code: accessCode, grade: info.grade, track: info.track },
+        });
+        if (bankError) throw bankError;
+        if (!bankData?.valid || !Array.isArray(bankData.questions) || bankData.questions.length === 0) {
+          throw new Error(`لا يحتوي الاختبار على أسئلة للصف ${info.grade} والمسار ${info.track}.`);
+        }
+        const selectedBank = {
+          bankKey: bankData.bankKey || `${info.grade}-${info.track}`,
+          questions: bankData.questions,
+          examId: bankData.examId ?? validatedExam?.examId ?? null,
+        };
         exam = buildExam({ [selectedBank.bankKey]: selectedBank.questions }, info.grade, info.track, info.id, {
           examId: selectedBank.examId,
           legacy: Boolean(validatedExam?.legacy),
         });
+        setBanks({ [selectedBank.bankKey]: selectedBank.questions });
+        setBanksError(false);
       } catch (error) {
-        if (validatedExam?.legacy) {
-          showAlert('الصف غير متاح في هذا الاختبار', error.message);
-          return;
-        }
-        // A student returning after an edit may no longer have a bank in the
-        // latest revision. The server can still restore the pinned attempt.
+        showAlert('الصف غير متاح في هذا الاختبار', error?.message || 'تعذر تحميل بنك الأسئلة.');
+        return;
       }
       let startedAttemptId = null;
       let attemptToken = '';
@@ -492,7 +491,7 @@ export default function QuizApp() {
       setScreen('quiz');
       window.scrollTo({ top: 0 });
     },
-    [banks, isExamCodeActive, showAlert, validatedExam, accessCode]
+    [isExamCodeActive, showAlert, validatedExam, accessCode]
   );
 
   const beginWithAudioGate = useCallback((info, recoverDevice = false) => {
@@ -753,7 +752,7 @@ export default function QuizApp() {
 
       {screen === 'access' && <ExamCodeScreen onContinue={validateExamCode} />}
 
-      {screen === 'login' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (
+      {screen === 'login' && validatedExam && (
     <LoginScreen
       onStart={handleStart}
       durationMinutes={validatedExam?.durationMinutes}
@@ -771,7 +770,7 @@ export default function QuizApp() {
         onEnter={enterExamAfterAudio}
       />}
 
-      {screen === 'quiz' && (validatedExam?.legacy ? Boolean(banks) : Boolean(validatedExam?.banks)) && (
+      {screen === 'quiz' && validatedExam && (
         <QuizScreen
           student={student}
           examTitle={attemptExamTitle || validatedExam?.examTitle}
